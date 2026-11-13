@@ -681,15 +681,15 @@ BOOL runImperium(void)
     /* First we attempt to come up with the port name to use */
     if (DoDebug)
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, IMP_TEST_PORT);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), IMP_TEST_PORT);
     }
     else if (PlayPort[0] != '\0')
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, &PlayPort[0]);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), &PlayPort[0]);
     }
     else
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, IMPERIUM_PORT);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), IMPERIUM_PORT);
     }
     /* Try to open the port */
     ImperiumPort = open(fileDir, O_WRONLY | O_NDELAY, 0);
@@ -698,7 +698,7 @@ BOOL runImperium(void)
         ISt = ImpAlloc();
         if (ISt != NULL)
         {
-	    tmpNam = impMakeFifo(FIFO_DIR, "icon", 0622);
+	    tmpNam = impMakeFifo(impFifoDir(), "icon", 0622);
 	    if (tmpNam == NULL)
 	    {
 	        perror("Unable to create named pipe");

@@ -82,6 +82,7 @@ BOGUS - Imperium not supported on this machine due to missing unistd.h
 #include "../Include/Request.h"
 #include "Server.h"
 #include "../impsec.h"
+#include "../Include/ImpFifo.h"
 
 static const char rcsid[] __attribute__((unused)) = "$Id: ServerMain.c,v 1.5 2000/05/23 20:25:42 marisa Exp $";
 
@@ -3204,15 +3205,15 @@ void startServing(void)
     openFiles(&Path[0], &HelpDir[0], &DocDir[0]);
     if (UseTest)
     {
-	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/server/%s", FIFO_DIR, IMP_TEST_PORT);
+	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/server/%s", impFifoDir(), IMP_TEST_PORT);
     }
     else if (PlayPort[0] != '\0')
     {
-	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/server/%s", FIFO_DIR, &PlayPort[0]);
+	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/server/%s", impFifoDir(), &PlayPort[0]);
     }
     else
     {
-	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/server/%s", FIFO_DIR, IMPERIUM_PORT);
+	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/server/%s", impFifoDir(), IMPERIUM_PORT);
     }
     ImperiumPort = openPort(lineBuf);
     if (ImperiumPort < 0)
@@ -3374,6 +3375,7 @@ int main(int argc, char *argv[])
     BOOL hadError;
     char *par;
     FILE *LockFD;
+    char lineBuf[1100];
 
     UseTest = FALSE;
     DoNews = TRUE;
@@ -3398,12 +3400,14 @@ int main(int argc, char *argv[])
         /* running from CLI */
         hadError = FALSE;
 	/* the data directory sits next to the fifo directory */
-	LockFD = fopen(FIFO_DIR "/../data/nostart", "r");
+	snprintf(lineBuf, IMP_BUFSIZE(lineBuf), "%s/../data/nostart",
+	    impFifoDir());
+	LockFD = fopen(lineBuf, "r");
 	if (LockFD != NULL)
 	{
 		/* the log file isn't open yet, so say it where it can be seen */
-		fputs("Lock file " FIFO_DIR "/../data/nostart present - not "
-		    "starting Imperium server\n", stderr);
+		fprintf(stderr, "Lock file %s present - not starting Imperium "
+		    "server\n", lineBuf);
 		exit(1);
 	}
 	if (argc > 1)

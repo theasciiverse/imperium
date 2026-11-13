@@ -244,15 +244,15 @@ int doShut(void)
     /* Set up the path & file name of the server port */
     if (UseTest)
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, IMP_TEST_PORT);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), IMP_TEST_PORT);
     }
     else if (PlayPort[0] != '\0')
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, &PlayPort[0]);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), &PlayPort[0]);
     }
     else
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, IMPERIUM_PORT);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), IMPERIUM_PORT);
     }
     imperiumPort = open(fileDir, O_WRONLY | O_NDELAY, 0);
     if (imperiumPort >= 0)
@@ -260,7 +260,7 @@ int doShut(void)
             rq = calloc(1, sizeof(Request_t));
             if (rq != NULL)
             {
-		tmpNam = impMakeFifo(FIFO_DIR, "isht", 0622);
+		tmpNam = impMakeFifo(impFifoDir(), "isht", 0622);
 		if (tmpNam == NULL)
 		{
 		    perror("Unable to create named pipe");
@@ -458,7 +458,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-	    snprintf(fileDir, sizeof(fileDir), "%s/../is.allow", FIFO_DIR);
+	    snprintf(fileDir, sizeof(fileDir), "%s/../is.allow", impFifoDir());
 	    /* if there is no is.allow refuse to do anything */
 	    if ((allowFD = fopen(fileDir, "r")) == NULL)
 	    {

@@ -591,15 +591,15 @@ void runImperium(void)
     /* First we attempt to come up with the port name to use */
     if (DoDebug)
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, IMP_TEST_PORT);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), IMP_TEST_PORT);
     }
     else if (PlayPort[0] != '\0')
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, &PlayPort[0]);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), &PlayPort[0]);
     }
     else
     {
-	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", FIFO_DIR, IMPERIUM_PORT);
+	snprintf(fileDir, sizeof(fileDir), "%s/server/%s", impFifoDir(), IMPERIUM_PORT);
     }
     /* Try to open the port */
     ImperiumPort = open(fileDir, O_WRONLY | O_NDELAY, 0);
@@ -610,7 +610,7 @@ void runImperium(void)
         {
 	    /* Attempt to turn off Telnet line processing */
 	    /*write_str("\xff\xfb\x01\xff\xfb\x03\xff\xfd\xf3");*/
-	    tmpNam = impMakeFifo(FIFO_DIR, "telimp", 0622);
+	    tmpNam = impMakeFifo(impFifoDir(), "telimp", 0622);
 	    if (tmpNam == NULL)
 	    {
 		ErrStr="Unable to create named pipe\n";
@@ -863,7 +863,16 @@ void runNetImperium(void)
 {
 	int s;
 
-	if ((s=establish_sock(PORTNUM)) < 0)
+	unsigned short port = PORTNUM;
+	const char *portEnv = getenv("IMPERIUM_TELNET_PORT");
+
+	/* IMPERIUM_TELNET_PORT picks another TCP port, for example to run a
+	   second game on the same machine */
+	if ((portEnv != NULL) && (atoi(portEnv) > 0) && (atoi(portEnv) < 65536))
+	{
+		port = (unsigned short) atoi(portEnv);
+	}
+	if ((s=establish_sock(port)) < 0)
 	{
 		perror("establish_sock");
 		return;

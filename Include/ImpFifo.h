@@ -94,4 +94,31 @@ static char *impMakeFifo(const char *dir, const char *prefix, mode_t mode)
     return NULL;
 }
 
+/*
+ * impFifoDir - the directory that holds the server's port and the
+ *      clients' reply pipes. It is FIFO_DIR, set when the game is built,
+ *      unless IMPERIUM_HOME names a game directory at run time, in which
+ *      case it is $IMPERIUM_HOME/fifo. That lets one build run a private
+ *      game anywhere, for example in a player's own folder.
+ */
+static const char *impFifoDir(void)
+{
+    static char dir[1024];
+    const char *home;
+
+    if (dir[0] == '\0')
+    {
+        home = getenv("IMPERIUM_HOME");
+        if ((home != NULL) && (home[0] != '\0'))
+        {
+            snprintf(dir, sizeof(dir), "%s/fifo", home);
+        }
+        else
+        {
+            snprintf(dir, sizeof(dir), "%s", FIFO_DIR);
+        }
+    }
+    return dir;
+}
+
 #endif /* IMP_FIFO_H */
