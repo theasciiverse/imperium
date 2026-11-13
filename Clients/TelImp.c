@@ -88,7 +88,11 @@ BOGUS - TelImp not supported on this machine due to missing select() call!
 #include <sys/types.h>
 #define _XOPEN_SOURCE
 #include <unistd.h>
+#ifdef __APPLE__
+#include <unistd.h>  /* macOS has crypt() here and no crypt.h */
+#else
 #include <crypt.h>
+#endif
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <stdio.h>

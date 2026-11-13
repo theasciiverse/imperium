@@ -17,6 +17,10 @@ the `asciiverse` branch carries the changes below.
   beside it), through `impFifoDir()` in `Include/ImpFifo.h`.
   `IMPERIUM_TELNET_PORT` likewise picks TelImp's TCP port (default 3458).
   Unset, nothing changes.
+- **Builds on macOS** (written to go upstream): the five sources that
+  include `<crypt.h>` for `crypt()` take `<unistd.h>` on macOS, which has
+  no `crypt.h` and declares `crypt()` there (the workflow already links
+  without `-lcrypt` on macOS).
 - **The launcher** (`asciiverse/imperium.c`), the program av starts:
   - `imperium online` plays the public game at empiredirectory.net,
     port 3458, by talking plain text to its TelImp, and hides what you

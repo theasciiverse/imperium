@@ -60,7 +60,11 @@ BOGUS - Imperium not supported on this machine due to missing stdlib.h
 #ifdef HAVE_UNISTD_H
 #define _XOPEN_SOURCE
 #include <unistd.h>
+#ifdef __APPLE__
+#include <unistd.h>  /* macOS has crypt() here and no crypt.h */
+#else
 #include <crypt.h>
+#endif
 #else
 BOGUS - Imperium not supported on this machine due to missing unistd.h
 #endif
