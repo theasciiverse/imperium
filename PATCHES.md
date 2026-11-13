@@ -49,6 +49,10 @@ the `asciiverse` branch carries the changes below.
 - `asciiverse/stage.sh` lays out that archive; `asciiverse/smoke.sh`
   hosts a fresh universe from it, joins it over the network as a second
   player, and checks that the host's leaving stops the server.
+- `asciiverse/smoke.sh` looks for the universe where the launcher keeps
+  it on each system: the state folder on Linux, Application Support on
+  macOS (it checked only the Linux path, so macOS failed its smoke test
+  while playing correctly).
 - `asciiverse/imperium.cast`: the catalog preview, a first session as a
   new player in a fresh private universe, typed by `asciiverse/drive.sh`.
   Never recorded against the public game.

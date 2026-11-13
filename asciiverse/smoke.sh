@@ -31,6 +31,10 @@ exec 3>&-
 wait $host
 cat "$tmp/host.out" | tail -5
 grep -q "Your universe is saved" "$tmp/host.out" || { echo "host did not finish" >&2; exit 1; }
-[ -f "$tmp/state/imperium/data/imp.world" ] || { echo "no universe" >&2; exit 1; }
+# the launcher keeps the universe in the state folder on Linux and in
+# Application Support on macOS
+world="$tmp/state/imperium/data/imp.world"
+[ "$(uname -s)" = Darwin ] && world="$tmp/Library/Application Support/imperium/data/imp.world"
+[ -f "$world" ] || { echo "no universe at $world" >&2; exit 1; }
 rm -rf "$tmp"
 echo "smoke test passed"
