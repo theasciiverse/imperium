@@ -1,0 +1,138 @@
+# Builds Imperium for the Asciiverse catalog: one archive per target, named
+# <id>-<target>.tar.gz, plus a SHA256SUMS file, attached to a GitHub release
+# (hub/catalog/SCHEMA.md, release.source = "github"). Runs on a pushed v*
+# tag, or by hand for an existing tag.
+#
+# Each archive holds `imperium`, the launcher av starts (asciiverse/
+# imperium.c), and the game itself in imperium-game/: the server (ImpServ),
+# the universe creator (ImpCre), the console and network clients (ConImp,
+# TelImp), ImpShut and ImpCtrl, with the help and doc files. The launcher
+# plays the public game at empiredirectory.net, hosts a game in the
+# player's state folder, or joins one on the local network.
+#
+# Linux builds run in Alpine and link statically against musl. macOS links
+# only the system's libraries. The game talks through named pipes and has
+# no Windows build.
+
+name: asciiverse-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing tag to build and release"
+        required: true
+
+env:
+  ID: imperium
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, runner: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build
+        run: |
+          docker run --rm -v "$PWD":/src -w /src alpine:3.22 sh -c '
+            apk add --no-cache build-base &&
+            make LIB_DEBUG= CFLAGS="-O2" LDFLAGS="-static -s" </dev/null &&
+            cc -O2 -Wall -static -s -o imperium asciiverse/imperium.c'
+          file imperium Servers/ImpServ
+
+      - name: Smoke test
+        run: |
+          sh asciiverse/stage.sh stage
+          sh asciiverse/smoke.sh stage
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf "dist/$ID-${{ matrix.target }}.tar.gz" -C stage .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-apple-darwin, runner: macos-15-intel }
+          - { target: aarch64-apple-darwin, runner: macos-15 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build
+        run: |
+          # crypt() is in macOS's libc, there is no libcrypt
+          make LIB_DEBUG= CFLAGS="-O2" LIBS= </dev/null
+          cc -O2 -Wall -o imperium asciiverse/imperium.c
+          strip imperium Servers/ImpServ Clients/ConImp Clients/TelImp \
+            Servers/ImpShut Servers/ImpCtrl ImpCre/ImpCre
+          for f in imperium Servers/ImpServ Clients/ConImp; do
+            otool -L "$f"
+            if otool -L "$f" | grep -E '/usr/local/|/opt/homebrew/'; then
+              echo "links a library that only exists on this runner" >&2; exit 1
+            fi
+          done
+
+      - name: Smoke test
+        run: |
+          sh asciiverse/stage.sh stage
+          sh asciiverse/smoke.sh stage
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf "dist/$ID-${{ matrix.target }}.tar.gz" -C stage .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    # macOS is released when it builds; Linux must
+    needs: [linux, macos]
+    if: ${{ always() && needs.linux.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Imperium $TAG" \
+                 --notes "Imperium 1.5 from github.com/fstltna/Imperium with the Asciiverse launcher: play online at empiredirectory.net, host a game of your own, or join one on your network."
+          gh release upload "$TAG" dist/* -R "$GITHUB_REPOSITORY" --clobber

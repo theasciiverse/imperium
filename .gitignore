@@ -16,3 +16,6 @@ Include/ImpLibSize
 .build-settings
 Servers/imperium-stop
 systemd/*.service
+
+# The Asciiverse launcher, built from asciiverse/imperium.c
+/imperium
