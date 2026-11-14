@@ -434,6 +434,7 @@ static int rnd(int n)
 
 static int Rows = 0, Cols = 0;      /* in subsectors */
 static int SecPerItu = 600;
+static time_t WorldCreated = 0;
 static char *Map = NULL;            /* what each subsector looked like */
 static int HomePlanet = -1;
 static int HomeRow = -1, HomeCol = -1;
@@ -494,20 +495,6 @@ static KPlanet *kpAt(int r, int c)
     for (i = 0; i < NKP; i++)
     {
         if (KP[i].row == r && KP[i].col == c)
-        {
-            return &KP[i];
-        }
-    }
-    return NULL;
-}
-
-static KPlanet *kpNum(int num)
-{
-    int i;
-
-    for (i = 0; i < NKP; i++)
-    {
-        if (KP[i].num == num)
         {
             return &KP[i];
         }
@@ -731,6 +718,18 @@ static void readInfo(void)
         {
             allocMap(rows * 10, cols * 10);
             NKP = 0;
+        }
+    }
+    if ((p = strstr(Out, "World created ")) != NULL)
+    {
+        struct tm tm;
+
+        memset(&tm, 0, sizeof(tm));
+        tm.tm_isdst = -1;
+        if (strptime(p + strlen("World created "), "%a %b %d %H:%M:%S %Y",
+            &tm) != NULL)
+        {
+            WorldCreated = mktime(&tm);
         }
     }
     if ((p = strstr(Out, "An ITU (Imperium Time Unit) is ")) != NULL)
@@ -1562,7 +1561,8 @@ static KPlanet *parsePlanetScan(int row, int col)
 {
     const char *p = strstr(Out, "Results of sensor scan of planet ");
     KPlanet *k;
-    char *q, cls;
+    const char *q;
+    char cls;
     int num;
 
     if (p == NULL)
@@ -1636,6 +1636,7 @@ static KPlanet *parsePlanetScan(int row, int col)
 /* ------------------------------------------------------------ logging in */
 
 static char RaceReply[16];
+static int RaceWasEmpty = 0;    /* nobody else of our race when we joined */
 
 /* pick the race with the fewest players, so each computer empire tends to
    get a home planet of its own */
@@ -1692,6 +1693,7 @@ static void chooseRace(void)
         best = WantRace;
     }
     snprintf(RaceReply, sizeof(RaceReply), "%d", best >= 0 ? best : 0);
+    RaceWasEmpty = (WantRace < 0 && bestPlayers == 0);
 }
 
 static int LoginFailed = 0;
@@ -2003,8 +2005,6 @@ static const char *dotAnswer(const char *q, void *ctx)
     return ".";
 }
 
-/* the energy one step costs, learnt from the navigate prompt */
-static int StepCost = 80;
 
 static void scanFrom(MyShip *s)
 {
@@ -2124,13 +2124,6 @@ static int colonisable(const KPlanet *k)
 {
     return k != NULL && k->scanned && k->owner == 0 && k->cls != 'H' &&
         k->gas >= 45 && k->water < 100 && k->tried < 3;
-}
-
-/* how good a planet would be to settle */
-static int colonyValue(const KPlanet *k)
-{
-    return k->size * 20 + k->minr + k->gold / 2 + (k->gas >= 50 ? 10 : 0) +
-        (k->cls == 'M' ? 30 : 0);
 }
 
 static int goalColony(int r, int c, void *ctx)
@@ -2286,22 +2279,6 @@ static int builtItem(void)
     return -1;
 }
 
-static int weaponsInstalledOn(int planet)
-{
-    int i, n = 0;
-
-    (void) planet;
-    for (i = 0; i < NBig; i++)
-    {
-        if (Big[i].where == planet && Big[i].installed &&
-            (Big[i].type == 'p' || Big[i].type == 'b'))
-        {
-            n++;
-        }
-    }
-    return n;
-}
-
 /* big items lying on our planets: " Item | Planet | TF | T | Wgt | Eff" */
 typedef struct
 {
@@ -2383,7 +2360,6 @@ static int takePlBig(int planet, char type)
 /* planet weapons are installed as soon as they are built, so every
    photon tube on a planet is counted as installed (an install that fails
    because the planet is full leaves it in store, which is also fine) */
-static int PlanetWeapons[MAXMINE];
 
 static const char *photonAnswer(const char *q, void *ctx)
 {
@@ -2661,6 +2637,25 @@ static void probe(int num)
     (void) cmd(NULL, NULL, "liftoff %d", num);
 }
 
+/*
+ * The race's home planet bills whoever touches it for its soldiers' pay
+ * since anyone last did, and a player with no money left produces
+ * nothing ever again. So we only take settlers from it when we are sure
+ * the bill is small: our race had nobody else in it, and the universe is
+ * young enough that its pay since then is well within our money.
+ */
+static int homeBillSmall(void)
+{
+    long itus;
+
+    if (!RaceWasEmpty || WorldCreated == 0 || Sessions > 2)
+    {
+        return 0;
+    }
+    itus = (long) (time(NULL) - WorldCreated) / SecPerItu;
+    return itus * 110 < Money - 1500;
+}
+
 /* fill up with settlers at the race's home planet or one of ours */
 static void takeSettlers(int num)
 {
@@ -2695,7 +2690,7 @@ static int canBoard(int planet)
 
     if (planet == HomePlanet)
     {
-        return NMine == 0 && Money > 1500;
+        return NMine == 0 && homeBillSmall();
     }
     for (i = 0; i < NMine; i++)
     {
@@ -2713,7 +2708,7 @@ static int goalBoarding(int r, int c, void *ctx)
     int i;
 
     (void) ctx;
-    if (r == HomeRow && c == HomeCol && NMine == 0 && Money > 1500)
+    if (r == HomeRow && c == HomeCol && NMine == 0 && homeBillSmall())
     {
         return 1;
     }
@@ -2789,7 +2784,7 @@ static void actShip(int num)
         /* a new player's ship starts on the home planet: take settlers
            aboard straight away, while the home planet's bill is small */
         if (s->planet >= 0 && s->planet == HomePlanet && s->civ < 50 &&
-            NMine == 0 && guard == 0 && Money > 1500)
+            NMine == 0 && guard == 0 && homeBillSmall())
         {
             takeSettlers(num);
             readShips();
@@ -3070,6 +3065,12 @@ static void playSession(void)
         saveState();
         return;
     }
+    /* a long range scan now and then shows black holes and supernovas */
+    if (NShips > 0 && Sessions % 5 == 2 && cmd(NULL, NULL, "scan lr %d",
+        Ships[0].num))
+    {
+        parseLRScan();
+    }
     /* look around from a few of our planets now and then */
     if (NMine > 0 && Sessions % 5 == 1)
     {
@@ -3153,6 +3154,12 @@ int main(int argc, char *argv[])
     if (Password == NULL)
     {
         usage();
+    }
+    /* the game cuts longer passwords off and then drops the line */
+    if (strlen(Password) > 9 || strlen(CreatePass) > 9)
+    {
+        fprintf(stderr, "ImpBot: passwords are at most 9 characters\n");
+        return 2;
     }
     if (LogFile != NULL)
     {

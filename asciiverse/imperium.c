@@ -679,11 +679,12 @@ static void planBots(int want, const char *level, int fresh)
         Bot_t *b = &Bots[NBots];
 
         snprintf(b->name, sizeof(b->name), "%s", BotNames[NBots]);
-        for (j = 0; j < 12; j++)
+        /* Imperium keeps at most 9 characters of a password */
+        for (j = 0; j < 8; j++)
         {
             b->password[j] = letters[rand() % (int) strlen(letters)];
         }
-        b->password[12] = '\0';
+        b->password[8] = '\0';
         snprintf(b->level, sizeof(b->level), "%s",
             level != NULL ? level : "normal");
         NBots++;
@@ -752,8 +753,10 @@ static void startBots(const char *port)
         argv[n++] = Bots[i].level;
         argv[n++] = "-s";
         argv[n++] = state;
+        argv[n++] = "-L";
+        argv[n++] = log;
         argv[n] = NULL;
-        pid = spawn(dir, log, argv);
+        pid = spawn(dir, NULL, argv);
         fprintf(pids, "%ld\n", (long) pid);
         /* the server takes one new player at a time */
         usleep(1500000);

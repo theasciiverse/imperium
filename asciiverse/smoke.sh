@@ -5,7 +5,7 @@
 # the computer empires stop when the host leaves.
 set -eu
 d=$(cd "$1" && pwd)
-tmp=$(mktemp -d /tmp/impsmoke.XXXXXX)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/impsmoke.XXXXXX")
 export XDG_STATE_HOME="$tmp/state" IMPERIUM_TELNET_PORT=13458
 export HOME="$tmp"
 
