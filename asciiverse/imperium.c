@@ -477,14 +477,16 @@ static void createUniverse(const char *data)
 
     /* ImpCre reads its settings from the environment (ImpCre/default.sh
        lists them all). A ten by ten galaxy of galactic sectors for up to
-       eight players, with a ten minute Imperium Time Unit, so a game
-       moves along in days rather than months. */
+       sixteen players (room for the computer empires, and for those that
+       lose everything early and start again, with places to spare for
+       people), with a ten minute Imperium Time Unit, so a game moves along
+       in days rather than months. */
     setenv("DoNotAsk", "1", 1);
     setenv("GodPassword", pw, 1);
     setenv("CreationPassword", "add.me", 1);
     setenv("HorizSize", "10", 1);
     setenv("VertSize", "10", 1);
-    setenv("NumPlay", "9", 1);
+    setenv("NumPlay", "17", 1);
     setenv("ConTime", "1440", 1);
     setenv("SecItu", "600", 1);
     setenv("StartingCash", "5000", 1);

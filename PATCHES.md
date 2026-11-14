@@ -28,10 +28,12 @@ the `asciiverse` branch carries the changes below.
   - `imperium host` keeps a universe of the player's own in the state
     folder (`$XDG_STATE_HOME/imperium`, else `~/.local/state/imperium`;
     `~/Library/Application Support/imperium` on macOS). The first time,
-    ImpCre makes a 10x10 galaxy for up to eight players with a ten
-    minute Imperium Time Unit, a random deity password (in `deity.txt`)
-    and the creation password `add.me`. It starts ImpServ and TelImp
-    (so players on the network can join; `--alone` leaves TelImp out),
+    ImpCre makes a 10x10 galaxy for up to sixteen players (eight until
+    the computer empires came) with a ten minute Imperium Time Unit, a
+    random deity password (in `deity.txt`) and the creation password
+    `add.me`. It starts ImpServ and TelImp (so players on the network
+    can join; with `--alone` TelImp listens only on 127.0.0.1, for the
+    computer empires),
     runs ConImp, and stops both with ImpShut when the host leaves.
   - `imperium join HOST[:PORT]` plays a game someone else hosts.
   - `imperium stop` stops a hosted game; `imperium` alone shows a menu.

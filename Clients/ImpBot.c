@@ -1223,7 +1223,16 @@ static void readPlanets(void)
     {
         Mine[i].seen = 0;
     }
-    /* class 1 is the race's home planet, which is shared */
+    /*
+     * Planets only work out what they made when something touches them,
+     * and each time they can turn only a share of their ore into goods,
+     * so bring them up to date first (the census alone does not). Class 1
+     * is the race's home planet, which is shared and left alone.
+     */
+    if (NMine > 0)
+    {
+        (void) cmd(NULL, NULL, "update ?class#1 terse");
+    }
     if (!cmd(NULL, NULL, "census geo ?class#1"))
     {
         return;
@@ -2126,6 +2135,39 @@ static int colonisable(const KPlanet *k)
         k->gas >= 45 && k->water < 100 && k->tried < 3;
 }
 
+/* a planet to settle that will also make fuel tanks */
+static int fuelPlanet(const KPlanet *k)
+{
+    return k->gas > 50 && k->water > 25;
+}
+
+static int goalFuelColony(int r, int c, void *ctx)
+{
+    KPlanet *k;
+
+    (void) ctx;
+    if (!onMap(r, c) || !isPlanetChar(MAP(r, c)))
+    {
+        return 0;
+    }
+    k = kpAt(r, c);
+    return colonisable(k) && fuelPlanet(k);
+}
+
+static int haveFuelPlanet(void)
+{
+    int i;
+
+    for (i = 0; i < NMine; i++)
+    {
+        if (Mine[i].work[9] > 0 || (Mine[i].gas > 50 && Mine[i].water > 25))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int goalColony(int r, int c, void *ctx)
 {
     KPlanet *k;
@@ -2463,9 +2505,10 @@ static void managePlanets(void)
             continue;
         }
         /* a new ship once the planet has made the parts for one */
+        /* a ship is only worth building where there is fuel for it */
         if (NShips < ST.maxShips && m->prod[12] >= 275 && m->prod[11] >= 190
             && m->prod[15] >= 40 && m->eff >= 70 && m->civ >= 300 &&
-            affordProd(275 + 190 + 40 + 114))
+            m->ftnk >= 3 && affordProd(275 + 190 + 40 + 114))
         {
             static const char *parts[5] = { "engine", "computer", "lifesup",
                 "sensor", "sensor" };
@@ -2753,6 +2796,23 @@ static void takeSettlers(int num)
     }
     room = s->avail - 50;
     c.civ = room > 400 ? 400 : (room > 0 ? room : 0);
+    {
+        /* leave a colony enough people to grow */
+        MyPlanet *m = mineNum(s->planet, 0);
+        int i;
+
+        for (i = 0; m == NULL && i < NMine; i++)
+        {
+            if (Mine[i].row == s->row && Mine[i].col == s->col)
+            {
+                m = &Mine[i];
+            }
+        }
+        if (m != NULL && c.civ > m->civ - 150)
+        {
+            c.civ = m->civ > 150 ? m->civ - 150 : 0;
+        }
+    }
     c.sci = 0;
     c.mil = 20;
     c.off = 4;
@@ -2774,7 +2834,7 @@ static int canBoard(int planet)
     }
     for (i = 0; i < NMine; i++)
     {
-        if (Mine[i].num == planet && Mine[i].civ > 400)
+        if (Mine[i].num == planet && Mine[i].civ > 250)
         {
             return 1;
         }
@@ -2794,7 +2854,7 @@ static int goalBoarding(int r, int c, void *ctx)
     }
     for (i = 0; i < NMine; i++)
     {
-        if (Mine[i].row == r && Mine[i].col == c && Mine[i].civ > 600)
+        if (Mine[i].row == r && Mine[i].col == c && Mine[i].civ > 300)
         {
             return 1;
         }
@@ -3076,8 +3136,18 @@ static void actShip(int num)
         }
         if (n < 0 && s->civ >= settlersNeeded())
         {
-            n = findPath(s->row, s->col, goalColony, NULL, path, maxSteps(s),
-                &gr, &gc, 0);
+            /* without a planet that makes fuel, ships soon stop: settle
+               one first if one is in reach */
+            if (!haveFuelPlanet())
+            {
+                n = findPath(s->row, s->col, goalFuelColony, NULL, path,
+                    maxSteps(s), &gr, &gc, 0);
+            }
+            if (n < 0)
+            {
+                n = findPath(s->row, s->col, goalColony, NULL, path,
+                    maxSteps(s), &gr, &gc, 0);
+            }
         }
         if (n < 0 && s->civ < settlersNeeded() && NumColonies() < ST.maxColonies)
         {
@@ -3334,6 +3404,10 @@ static void playSession(void)
     }
     managePlanets();
     manageShips();
+    if (NMine > 0 && Btu >= 2)
+    {
+        (void) cmd(NULL, NULL, "update ?class#1 terse");
+    }
     saveState();
 }
 
