@@ -2150,36 +2150,62 @@ static int NumColonies(void)
    (civilians, military, technology, research, education, ocs, ore mining,
    gold mining, air tanks, fuel tanks, weapons, engines, hull, missile,
    planes, electronics); what is left is cash */
-static void planDivvy(const MyPlanet *m, int work[16])
+/*
+ * A planet makes each kind of production from its share of the work and,
+ * for most kinds, from the same share of the ore it has: so the output
+ * goes with the square of the share. Whatever is not given out is sold
+ * for cash, which goes with the square of its share too. A young empire
+ * keeps a good third as cash (a player with no money left gets no
+ * production at all); once it is rich it turns its planets to building.
+ */
+static void planDivvy(const MyPlanet *m, int work[16], int rich)
 {
-    int i, ore;
+    int i;
 
     for (i = 0; i < 16; i++)
     {
         work[i] = 0;
     }
-    ore = m->minr >= 40 ? 30 : (m->minr >= 15 ? 22 : 12);
-    work[1] = 6;                            /* military */
-    work[2] = 6;                            /* technology */
-    work[3] = 4;                            /* research */
-    work[4] = 2;                            /* education */
-    work[5] = 2;                            /* officers */
-    work[6] = ore;                          /* ore mining */
-    work[7] = m->gold >= 10 ? 8 : 0;        /* gold mining */
-    work[9] = (m->gas > 50 && m->water > 25) ? 5 : 0;   /* fuel tanks */
-    work[10] = 8;                           /* weapons */
-    work[11] = 4;                           /* engines */
-    work[12] = 8;                           /* hull */
-    work[13] = 5;                           /* missiles */
-    work[15] = 5;                           /* electronics */
+    work[1] = 6;                                        /* military */
+    work[2] = 4;                                        /* technology */
+    work[3] = 2;                                        /* research */
+    work[4] = 1;                                        /* education */
+    work[5] = 2;                                        /* officers */
+    work[6] = m->minr >= 40 ? 20 : (m->minr >= 15 ? 18 : 12);  /* ore */
+    work[7] = m->gold >= 10 ? 6 : 0;                    /* gold mining */
+    work[9] = (m->gas > 50 && m->water > 25) ? 6 : 0;   /* fuel tanks */
+    work[10] = 5;                                       /* weapons */
+    work[11] = 3;                                       /* engines */
+    work[12] = 5;                                       /* hull */
+    work[13] = 3;                                       /* missiles */
+    work[15] = 3;                                       /* electronics */
+    if (rich)
+    {
+        work[6] = m->minr >= 40 ? 12 : (m->minr >= 15 ? 14 : 10);
+        work[9] = work[9] > 0 ? 8 : 0;
+        work[10] = 10;
+        work[11] = 8;
+        work[12] = 12;
+        work[13] = 6;
+        work[15] = 6;
+    }
     if (Level == L_EASY)
     {
         /* the easy empire builds less and keeps more as cash */
-        work[10] = 4;
-        work[12] = 4;
-        work[2] = 3;
+        work[10] -= 2;
+        work[12] -= 2;
+        work[2] = 2;
+    }
+    else if (Level == L_HARD)
+    {
+        work[10] += 2;
+        work[12] += 2;
+        work[11] += 1;
     }
 }
+
+/* rich enough to turn a planet from cash to building */
+#define RICH 20000L
 
 static const char *ProdNames[16] =
 {
@@ -2225,7 +2251,7 @@ static void setDivvy(MyPlanet *m)
 {
     int work[16];
 
-    planDivvy(m, work);
+    planDivvy(m, work, Money > RICH);
     if (cmd(divvyAnswer, work, "divvy %d", m->num))
     {
         logf_("set work on planet %d", m->num);
@@ -2400,7 +2426,10 @@ static void managePlanets(void)
     {
         MyPlanet *m = &Mine[i];
 
-        if (workUnset(m) && m->btu >= 2)
+        /* new planets get to work; rich empires turn theirs to building
+           (each change costs the planet efficiency, so it is done once) */
+        if ((workUnset(m) || (Money > RICH && m->work[12] > 0 &&
+            m->work[12] < 10)) && m->btu >= 2)
         {
             setDivvy(m);
             continue;
@@ -2438,8 +2467,8 @@ static void managePlanets(void)
             && m->prod[15] >= 40 && m->eff >= 70 && m->civ >= 300 &&
             affordProd(275 + 190 + 40 + 114))
         {
-            static const char *parts[4] = { "engine", "computer", "lifesup",
-                "sensor" };
+            static const char *parts[5] = { "engine", "computer", "lifesup",
+                "sensor", "sensor" };
             int p, ship;
 
             if (!build(m->num, "ship", "b"))
@@ -2454,7 +2483,7 @@ static void managePlanets(void)
             }
             logf_("new ship %d on planet %d", ship, m->num);
             /* each build costs the planet 5 BTUs */
-            for (p = 0; p < 4 && !Lost; p++)
+            for (p = 0; p < 5 && !Lost; p++)
             {
                 int item;
 
@@ -2524,11 +2553,60 @@ static int nearestHomeOrColony(MyShip *s, int *gr, int *gc, char *path)
     return findPath(s->row, s->col, goalCell, rc, path, 30, gr, gc, 0);
 }
 
+/* energy one step costs a small ship, with some to spare */
+#define STEP_ENERGY 9
+
+/* one of our planets that makes fuel tanks or has some */
+static int goalFuel(int r, int c, void *ctx)
+{
+    int i;
+
+    (void) ctx;
+    for (i = 0; i < NMine; i++)
+    {
+        if (Mine[i].row == r && Mine[i].col == c && (Mine[i].ftnk > 0 ||
+            Mine[i].work[9] > 0))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* how far the ship is from fuel, in steps (a guess when there is none) */
+static int FuelDist = 0;
+
 static int maxSteps(const MyShip *s)
 {
-    int n = s->energy / 8;
+    /* always keep enough to get back to fuel */
+    int spare = s->energy - 20 - FuelDist * STEP_ENERGY;
+    int n = spare / STEP_ENERGY;
 
+    if (s->fuel > 40 || s->ftanks > 0)
+    {
+        /* the engines will make more energy from the fuel aboard */
+        n = (s->energy - 15) / STEP_ENERGY;
+    }
+    if (n < 0)
+    {
+        n = 0;
+    }
     return n > 30 ? 30 : n;
+}
+
+/* land on a fuel planet, take tanks aboard and burn some */
+static void takeFuel(int num)
+{
+    Cargo_t c = { 0, 0, 0, 0, 0, 6 };
+
+    if (!cmd(NULL, NULL, "land %d", num) || strstr(Out, "on the surface")
+        == NULL)
+    {
+        return;
+    }
+    (void) cmd(cargoAnswer, &c, "load small %d", num);
+    (void) cmd(NULL, NULL, "refuel %d", num);
+    (void) cmd(NULL, NULL, "liftoff %d", num);
 }
 
 static void scanPlanetHere(MyShip *s)
@@ -2571,7 +2649,9 @@ static void settle(int num)
     c.civ = s->civ;
     c.sci = s->sci > 2 ? s->sci - 2 : 0;
     c.mil = s->mil > 2 ? s->mil - 2 : 0;
-    c.off = s->off > 2 ? s->off - 2 : (s->off > 1 ? 1 : 0);
+    /* officers train the soldiers, and only while the colony is small:
+       an unarmed ship leaves them all */
+    c.off = s->photons > 0 ? (s->off > 2 ? s->off - 2 : 0) : s->off;
     c.mis = 0;
     c.ftanks = 0;
     (void) cmd(cargoAnswer, &c, "unload small %d", num);
@@ -2676,7 +2756,7 @@ static void takeSettlers(int num)
     c.sci = 0;
     c.mil = 20;
     c.off = 4;
-    c.mis = 0;
+    c.mis = s->photons > 0 ? 40 : 0;
     c.ftanks = -1;
     (void) cmd(cargoAnswer, &c, "load small %d", num);
     s = shipNum(num);
@@ -2738,6 +2818,22 @@ static int goalEnemy(int r, int c, void *ctx)
 
 static int war(void);
 
+/* one of our planets with missiles to spare */
+static int goalArsenal(int r, int c, void *ctx)
+{
+    int i;
+
+    (void) ctx;
+    for (i = 0; i < NMine; i++)
+    {
+        if (Mine[i].row == r && Mine[i].col == c && Mine[i].miss >= 20)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* attack the enemy planet the ship is orbiting */
 static void strike(int num)
 {
@@ -2764,6 +2860,50 @@ static void strike(int num)
     }
     /* look again: if nobody is left it can be settled */
     scanPlanetHere(s);
+}
+
+/*
+ * A ship with one sensor array can't tell a planet next to it from a
+ * star. A second array lets it see what is around it, so ships that call
+ * at one of our planets get one if the planet can make it.
+ */
+static int refit(int num)
+{
+    MyShip *s = shipNum(num);
+    MyPlanet *m;
+    int item;
+
+    if (s == NULL || s->planet < 0 || (m = mineNum(s->planet, 0)) == NULL ||
+        m->eff < 60 || m->btu < 5 || m->prod[15] < 20 || !affordProd(20) ||
+        s->avail < 450)
+    {
+        return 0;
+    }
+    item = takePlBig(m->num, 's');
+    if (item < 0)
+    {
+        if (!build(m->num, "sensor", NULL))
+        {
+            return 0;
+        }
+        item = builtItem();
+        m->prod[15] -= 20;
+        m->btu -= 5;
+    }
+    if (item < 0)
+    {
+        return 0;
+    }
+    (void) cmd(NULL, NULL, "load big %d %d", num, item);
+    (void) cmd(NULL, NULL, "install %d %d", num, item);
+    logf_("fitted ship %d with sensor %d", num, item);
+    return strstr(Out, "nstalled") != NULL;
+}
+
+/* with no planet yet, a handful of settlers will do to start one */
+static int settlersNeeded(void)
+{
+    return NMine == 0 ? 3 : 10;
 }
 
 static void actShip(int num)
@@ -2798,6 +2938,22 @@ static void actShip(int num)
         {
             return;
         }
+        if (s->planet >= 0 && s->sensorsIn < 2 && refit(num))
+        {
+            readShips();
+            continue;
+        }
+        if (s->planet >= 0 && s->photons > 0 && s->mis < 12 &&
+            mineNum(s->planet, 0) != NULL && mineNum(s->planet, 0)->miss >= 6)
+        {
+            Cargo_t c = { 0, 0, 10, 4, 40, -1 };
+
+            (void) cmd(cargoAnswer, &c, "load small %d", num);
+            (void) cmd(NULL, NULL, "refuel %d", num);
+            (void) cmd(NULL, NULL, "liftoff %d", num);
+            readShips();
+            continue;
+        }
         if (s->planet >= 0)
         {
             /* on a planet: take on settlers if we can, then go */
@@ -2813,12 +2969,52 @@ static void actShip(int num)
             readShips();
             continue;
         }
+        if (s->fuel < 10 && s->ftanks > 0)
+        {
+            (void) cmd(NULL, NULL, "refuel %d", num);
+            readShips();
+            continue;
+        }
+        /* running low: back to fuel */
+        {
+            int fr, fc, fd;
+
+            if (goalFuel(s->row, s->col, NULL))
+            {
+                fd = 0;
+                path[0] = '\0';
+            }
+            else
+            {
+                fd = findPath(s->row, s->col, goalFuel, NULL, path,
+                    maxSteps(s) + FuelDist + 2, &fr, &fc, 0);
+            }
+            FuelDist = fd < 0 ? 0 : fd;
+            if (fd >= 0 && s->fuel < 20 && s->ftanks == 0)
+            {
+                if (fd == 0)
+                {
+                    takeFuel(num);
+                    readShips();
+                    s = shipNum(num);
+                    if (s == NULL || s->ftanks == 0)
+                    {
+                        return;
+                    }
+                    continue;
+                }
+                if (s->energy < 20 + fd * STEP_ENERGY + 30)
+                {
+                    if (!moveShip(s, path))
+                    {
+                        return;
+                    }
+                    continue;
+                }
+            }
+        }
         if (s->energy < 20)
         {
-            if (s->ftanks > 0)
-            {
-                (void) cmd(NULL, NULL, "refuel %d", num);
-            }
             return;
         }
         here = onMap(s->row, s->col) && isPlanetChar(MAP(s->row, s->col)) ?
@@ -2830,7 +3026,7 @@ static void actShip(int num)
             here = kpAt(s->row, s->col);
         }
         /* settle where we are */
-        if (here != NULL && colonisable(here) && s->civ >= 10)
+        if (here != NULL && colonisable(here) && s->civ >= settlersNeeded())
         {
             settle(num);
             readShips();
@@ -2860,13 +3056,42 @@ static void actShip(int num)
             n = findPath(s->row, s->col, goalEnemy, NULL, path, maxSteps(s),
                 &gr, &gc, 0);
         }
-        if (n < 0 && s->civ >= 10)
+        if (n < 0 && s->photons > 0 && s->mis < 6 && war())
+        {
+            /* out of torpedoes: home to the nearest planet that has some */
+            if (goalArsenal(s->row, s->col, NULL))
+            {
+                (void) cmd(NULL, NULL, "land %d", num);
+                readShips();
+                continue;
+            }
+            n = findPath(s->row, s->col, goalArsenal, NULL, path,
+                maxSteps(s), &gr, &gc, 0);
+            if (n >= 0 && path[0] == '\0')
+            {
+                (void) cmd(NULL, NULL, "land %d", num);
+                readShips();
+                continue;
+            }
+        }
+        if (n < 0 && s->civ >= settlersNeeded())
         {
             n = findPath(s->row, s->col, goalColony, NULL, path, maxSteps(s),
                 &gr, &gc, 0);
         }
-        if (n < 0 && s->civ < 10 && NumColonies() < ST.maxColonies)
+        if (n < 0 && s->civ < settlersNeeded() && NumColonies() < ST.maxColonies)
         {
+            if (goalBoarding(s->row, s->col, NULL))
+            {
+                takeSettlers(num);
+                readShips();
+                s = shipNum(num);
+                if (s == NULL || s->civ < settlersNeeded())
+                {
+                    return;
+                }
+                continue;
+            }
             n = findPath(s->row, s->col, goalBoarding, NULL, path,
                 maxSteps(s), &gr, &gc, 0);
             if (n == 0 || (gr == s->row && gc == s->col))
@@ -2899,7 +3124,7 @@ static void actShip(int num)
         if (path[0] == '\0')
         {
             /* arrived at a goal cell already */
-            if (gr == s->row && gc == s->col && s->civ < 10)
+            if (gr == s->row && gc == s->col && s->civ < settlersNeeded())
             {
                 takeSettlers(num);
                 readShips();
@@ -2917,7 +3142,7 @@ static void actShip(int num)
         }
         scanFrom(s);
         /* landing on the home planet to load settlers */
-        if (s->row == HomeRow && s->col == HomeCol && s->civ < 10 &&
+        if (s->row == HomeRow && s->col == HomeCol && s->civ < settlersNeeded() &&
             NumColonies() < ST.maxColonies)
         {
             takeSettlers(num);
@@ -3020,6 +3245,22 @@ static void readNews(void)
 
 /* ------------------------------------------------------------ a session */
 
+/* every ship out of energy and fuel, with none to be had */
+static int allStranded(void)
+{
+    int i;
+
+    for (i = 0; i < NShips; i++)
+    {
+        if (Ships[i].energy >= 20 || Ships[i].fuel > 0 ||
+            Ships[i].ftanks > 0 || Ships[i].planet >= 0)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void playSession(void)
 {
     Sessions++;
@@ -3047,11 +3288,20 @@ static void playSession(void)
      * Nothing left: no ships and no planets. Like a person whose empire
      * is gone, start again as a new player (remembering the map).
      */
-    if (NShips == 0 && NMine == 0 && Sessions > 1)
+    if (NMine == 0 && Sessions > 1 && (NShips == 0 || allStranded()))
     {
         static const char *Suffix[3] = { "II", "III", "IV" };
+        int players = 0, most = 0;
+        const char *p;
 
-        if (Rebirths < 3)
+        /* only while there is room to spare for people in the game */
+        if (cmd(NULL, NULL, "info") && (p = strstr(Out,
+            "There are currently ")) != NULL)
+        {
+            (void) sscanf(p, "There are currently %d players out of a "
+                "maximum of %d", &players, &most);
+        }
+        if (Rebirths < 3 && most > 0 && players + 3 <= most)
         {
             snprintf(NameBuf, sizeof(NameBuf), "%s %s", BaseName,
                 Suffix[Rebirths]);
@@ -3059,6 +3309,7 @@ static void playSession(void)
             Name = NameBuf;
             HomePlanet = HomeRow = HomeCol = -1;
             MyNumber = -1;
+            NShips = 0;
             memset(AttackedBy, 0, sizeof(AttackedBy));
             logf_("empire lost; starting again as %s", Name);
         }

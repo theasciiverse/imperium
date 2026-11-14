@@ -1,13 +1,15 @@
 #!/bin/bash
 # drive.sh SESSION: a first session as a new player, typed at a human pace
-# into `imperium host --alone` running in tmux. Recorded
+# into `imperium host --alone` running in tmux, with the three computer
+# empires of a new universe logging in beside it. Recorded
 # asciiverse/imperium.cast against a fresh private universe, never against
 # the public game:
 #   XDG_STATE_HOME=$(mktemp -d) asciinema rec --window-size 100x30 \
 #     --command "imperium host --alone" imperium.cast
 S=$1
 type_line() { local s=$1 i; for ((i=0; i<${#s}; i++)); do tmux send-keys -t "$S" -l "${s:i:1}"; sleep 0.07; done; sleep 0.3; tmux send-keys -t "$S" Enter; }
-sleep 3
+# the launcher creates the universe and starts the computer empires first
+sleep 9
 type_line Nova; sleep 1
 type_line y; sleep 1
 type_line add.me; sleep 1

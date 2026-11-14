@@ -467,11 +467,11 @@ static void createUniverse(const char *data)
 
     program(impcre, sizeof(impcre), "ImpCre");
     srand((unsigned) (time(NULL) ^ getpid()));
-    for (i = 0; i < 10; i++)
+    for (i = 0; i < 8; i++)
     {
         pw[i] = letters[rand() % (int) strlen(letters)];
     }
-    pw[10] = '\0';
+    pw[8] = '\0';
     printf("Creating a new universe...\n");
     fflush(stdout);
 

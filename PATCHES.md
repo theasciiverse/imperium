@@ -60,6 +60,11 @@ the `asciiverse` branch carries the changes below.
   game runs and stop with it. With `--alone`, TelImp runs for them on
   127.0.0.1 only.
 
+- **A deity password that works**: the launcher made a 10-character
+  deity password, but Imperium keeps at most 9 and drops a connection
+  given a longer one, so the one in `deity.txt` could not log in. It is 8
+  characters now, like the computer empires' passwords.
+
 ## Packaging
 
 - `.github/workflows/asciiverse-release.yml`: static Linux builds
