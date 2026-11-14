@@ -2012,6 +2012,29 @@ static int goalUnscannedDM(int r, int c, void *ctx)
         goalUnscanned(r, c, ctx);
 }
 
+/* an unexamined planet near another race's home planet */
+static int goalNearForeignHome(int r, int c, void *ctx)
+{
+    int dr, dc;
+
+    if (!goalUnscanned(r, c, ctx))
+    {
+        return 0;
+    }
+    for (dr = -12; dr <= 12; dr++)
+    {
+        for (dc = -12; dc <= 12; dc++)
+        {
+            if (onMap(r + dr, c + dc) && MAP(r + dr, c + dc) == 'H' &&
+                !(r + dr == HomeRow && c + dc == HomeCol))
+            {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 /* ------------------------------------------------------------ moving */
 
 static const char *dotAnswer(const char *q, void *ctx)
@@ -2574,7 +2597,7 @@ static void managePlanets(void)
                 }
             }
             {
-                Cargo_t c = { 0, 4, 10, 4, 40, -1 };
+                Cargo_t c = { 0, 4, 10, 1, 40, -1 };   /* one officer each */
 
                 (void) cmd(cargoAnswer, &c, "load small %d", ship);
                 (void) cmd(NULL, NULL, "refuel %d", ship);
@@ -2699,9 +2722,13 @@ static void settle(int num)
     c.civ = s->civ;
     c.sci = s->sci > 2 ? s->sci - 2 : 0;
     c.mil = s->mil > 2 ? s->mil - 2 : 0;
-    /* officers train the soldiers, and only while the colony is small:
-       an unarmed ship leaves them all */
-    c.off = s->photons > 0 ? (s->off > 2 ? s->off - 2 : 0) : s->off;
+    /*
+     * Officers are scarce (a new player has five, and training more takes
+     * soldiers that take officers to train) and a ship needs one aboard to
+     * fire. An unarmed ship leaves them where new ships will be built, on
+     * a planet that makes fuel tanks, so each new warship can take one.
+     */
+    c.off = (s->photons == 0 && k != NULL && fuelPlanet(k)) ? s->off : 0;
     c.mis = 0;
     c.ftanks = 0;
     (void) cmd(cargoAnswer, &c, "unload small %d", num);
@@ -2884,6 +2911,7 @@ static int goalEnemy(int r, int c, void *ctx)
 }
 
 static int war(void);
+static int armedShip(const MyShip *s);
 
 /* one of our planets with missiles to spare */
 static int goalArsenal(int r, int c, void *ctx)
@@ -2995,6 +3023,7 @@ static char endCell(const MyShip *s, const char *path)
 
 static void actShip(int num)
 {
+    int rearmed = -1;
     char path[128];
     int gr, gc, n, guard;
     MyShip *s;
@@ -3030,10 +3059,13 @@ static void actShip(int num)
             readShips();
             continue;
         }
-        if (s->planet >= 0 && s->photons > 0 && s->mis < 12 &&
-            mineNum(s->planet, 0) != NULL && mineNum(s->planet, 0)->miss >= 6)
+        if (s->planet >= 0 && s->photons > 0 && mineNum(s->planet, 0) != NULL
+            && ((s->mis < 12 && mineNum(s->planet, 0)->miss >= 6) ||
+            (s->off == 0 && mineNum(s->planet, 0)->off > 1)) &&
+            rearmed != s->planet)
         {
-            Cargo_t c = { 0, 0, 10, 4, 40, -1 };
+            rearmed = s->planet;
+            Cargo_t c = { 0, 0, 10, s->off > 0 ? 0 : 1, 40, -1 };
 
             (void) cmd(cargoAnswer, &c, "load small %d", num);
             (void) cmd(NULL, NULL, "refuel %d", num);
@@ -3130,18 +3162,25 @@ static void actShip(int num)
             continue;
         }
         /* at war and over an enemy planet with torpedoes aboard */
-        if (here != NULL && here->owner == 2 && s->photons > 0 && s->mis >= 3
-            && war())
+        if (here != NULL && here->owner == 2 && armedShip(s) && war())
         {
             strike(num);
             return;
         }
         /* where next? */
         n = -1;
-        if (s->photons > 0 && s->mis >= 6 && war())
+        if (armedShip(s) && s->mis >= 6 && war())
         {
             n = findPath(s->row, s->col, goalEnemy, NULL, path, maxSteps(s),
                 &gr, &gc, 0);
+        }
+        /* armed and idle: look for the neighbours' colonies, which are
+           likely near their race's home planet */
+        if (n < 0 && armedShip(s) && ST.attackRatio > 0 &&
+            (Level == L_HARD || NMine >= 3))
+        {
+            n = findPath(s->row, s->col, goalNearForeignHome, NULL, path,
+                maxSteps(s), &gr, &gc, 0);
         }
         if (n < 0 && s->photons > 0 && s->mis < 6 && war())
         {
@@ -3292,51 +3331,55 @@ static void manageShips(void)
 
 /* rough strength: our armed ships and planets against what we know of
    the nearest enemy planet */
+static int armedShip(const MyShip *s)
+{
+    return s->photons > 0 && s->mis >= 3 && s->off >= 1;
+}
+
+/*
+ * At war when we have crewed, armed ships enough for our level and know an
+ * enemy colony to go for. (Race home planets belong to nobody and can't
+ * be attacked.) The easy empire only strikes back at whoever hit it.
+ */
 static int war(void)
 {
-    int i, armed = 0, enemyMil = 0, known = 0, ourMil = 0;
+    int i, armed = 0, known = 0;
 
-    if (ST.attackRatio == 0)
-    {
-        /* the easy empire only strikes back at whoever hit it */
-        for (i = 0; i < 64; i++)
-        {
-            if (AttackedBy[i])
-            {
-                return 1;
-            }
-        }
-        return 0;
-    }
     for (i = 0; i < NShips; i++)
     {
-        if (Ships[i].photons > 0 && Ships[i].mis >= 6)
+        if (armedShip(&Ships[i]))
         {
             armed++;
         }
     }
-    for (i = 0; i < NMine; i++)
-    {
-        ourMil += Mine[i].mil + Mine[i].off;
-    }
     for (i = 0; i < NKP; i++)
     {
-        if (KP[i].owner == 2 && KP[i].cls != 'H')
+        if (KP[i].owner == 2 && KP[i].cls != 'H' && KP[i].num >= 0)
         {
             known++;
-            enemyMil += KP[i].mil;
         }
+    }
+    if (ST.attackRatio == 0)
+    {
+        for (i = 0; i < 64; i++)
+        {
+            if (AttackedBy[i])
+            {
+                return armed > 0 && known > 0;
+            }
+        }
+        return 0;
     }
     if (known == 0 || armed == 0)
     {
         return 0;
     }
-    /* settled enough of our own first */
-    if (NMine < 3 && Level != L_HARD)
+    /* hard goes with one ship, normal waits for two and a few planets */
+    if (Level == L_HARD)
     {
-        return 0;
+        return 1;
     }
-    return ourMil * 100 >= (enemyMil / known + 10) * ST.attackRatio;
+    return armed >= 2 && NMine >= 3;
 }
 
 /* telegrams tell us who has been firing on us */
