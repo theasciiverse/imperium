@@ -2966,6 +2966,26 @@ static int settlersNeeded(void)
     return NMine == 0 ? 3 : 10;
 }
 
+/* what the map says is where a path ends */
+static char endCell(const MyShip *s, const char *path)
+{
+    int r = s->row, c = s->col, d;
+    const char *p;
+
+    for (p = path; *p != '\0'; p++)
+    {
+        for (d = 0; d < 8; d++)
+        {
+            if (DIRCH[d] == *p)
+            {
+                r += DR[d];
+                c += DC[d];
+            }
+        }
+    }
+    return onMap(r, c) ? MAP(r, c) : '?';
+}
+
 static void actShip(int num)
 {
     char path[128];
@@ -3200,6 +3220,25 @@ static void actShip(int num)
                 readShips();
             }
             return;
+        }
+        /* a ship with two sensor arrays can tell a star from a planet next
+           to it: stop beside an unknown planet-or-star and look first */
+        if (s->sensorsIn >= 2 && endCell(s, path) == '0')
+        {
+            size_t len = strlen(path);
+
+            if (len > 1)
+            {
+                path[len - 1] = '\0';
+            }
+            else
+            {
+                scanFrom(s);
+                if (endCell(s, path) != '0')
+                {
+                    continue;
+                }
+            }
         }
         if (!moveShip(s, path))
         {
