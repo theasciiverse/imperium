@@ -2005,6 +2005,13 @@ static int goalUnscanned(int r, int c, void *ctx)
     return k == NULL || !k->scanned;
 }
 
+/* an unexamined planet of a class that may make fuel */
+static int goalUnscannedDM(int r, int c, void *ctx)
+{
+    return onMap(r, c) && (MAP(r, c) == 'D' || MAP(r, c) == 'M') &&
+        goalUnscanned(r, c, ctx);
+}
+
 /* ------------------------------------------------------------ moving */
 
 static const char *dotAnswer(const char *q, void *ctx)
@@ -3190,6 +3197,13 @@ static void actShip(int num)
                 readShips();
                 continue;
             }
+        }
+        /* fuel is the scarce thing: only class D and M planets make it,
+           so look at those first */
+        if (n < 0 && !haveFuelPlanet())
+        {
+            n = findPath(s->row, s->col, goalUnscannedDM, NULL, path,
+                maxSteps(s), &gr, &gc, 0);
         }
         if (n < 0)
         {
