@@ -102,6 +102,7 @@ BOGUS - TelImp not supported on this machine due to missing select() call!
 #include <sys/wait.h>
 #include <sys/param.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 
 #ifdef HAVE_STRING_H
@@ -785,14 +786,23 @@ int establish_sock(unsigned short portnum)
 	int s;
 	int on = 1;
 	struct sockaddr_in sa;
+	const char *bindEnv = getenv("IMPERIUM_TELNET_BIND");
 
 	/* Listen on all interfaces. This used to look up our own hostname
 	   first, which failed on machines whose hostname does not resolve
 	   (common on VPSes and in containers) even though the address
-	   was never used. */
+	   was never used. IMPERIUM_TELNET_BIND names one IPv4 address to
+	   listen on instead, for example 127.0.0.1 to keep a game to this
+	   computer. */
 	memset(&sa, 0, sizeof(struct sockaddr_in)); /* Clear address */
 	sa.sin_family=AF_INET;
 	sa.sin_addr.s_addr=htonl(INADDR_ANY);
+	if ((bindEnv != NULL) && (bindEnv[0] != '\0') &&
+	    (inet_pton(AF_INET, bindEnv, &sa.sin_addr) != 1))
+	{
+		/* not an address we understand: stay on this computer */
+		sa.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+	}
 	sa.sin_port=htons(portnum);   /* Our port number */
 	if ((s=socket(AF_INET, SOCK_STREAM, 0)) < 0) /* Create the socket */
 	{

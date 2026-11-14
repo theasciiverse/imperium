@@ -12,7 +12,8 @@
  *   imperium                  a menu of the three below
  *   imperium online           the public game at empiredirectory.net
  *   imperium host             a game of your own on this computer, which
- *                             players on your network can join too
+ *                             players on your network can join too, with
+ *                             computer empires to play against
  *   imperium join HOST[:PORT] a game someone hosts (port 3458 by default)
  *   imperium stop             stop the game this computer hosts
  *
@@ -22,6 +23,12 @@
  * the game folder beside this program, and runs ConImp, the console
  * client. The universe stays between sessions; the game (server and
  * network front end) stops when the host leaves.
+ *
+ * Host also starts the computer empires: ImpBot players that log in over
+ * TelImp exactly as a person would (Clients/ImpBot.c). Who they are, with
+ * their passwords and levels, is kept in bots.txt in the game folder; each
+ * keeps its map and a log in bots/. With --alone, TelImp still runs for
+ * them but listens only on 127.0.0.1.
  */
 
 #define _GNU_SOURCE
@@ -510,6 +517,8 @@ static void createUniverse(const char *data)
     }
 }
 
+static void stopBots(void);
+
 static int stopServer(int quiet)
 {
     char impshut[PATH_MAX], pidfile[PATH_MAX];
@@ -517,6 +526,7 @@ static int stopServer(int quiet)
     int status, waited;
     FILE *f;
 
+    stopBots();
     pathIn(pidfile, sizeof(pidfile), Home, "telimp.pid");
     if ((f = fopen(pidfile, "r")) != NULL)
     {
@@ -580,16 +590,224 @@ static int stopServer(int quiet)
     return 0;
 }
 
-static int host(int lan)
+/* ------------------------------------------------------- computer empires */
+
+#define MAX_BOTS 7
+
+static const char *BotNames[MAX_BOTS] =
+{
+    "Vorlath", "Kessaran", "Tyrene", "Oronde", "Malethi", "Zandor", "Quellis"
+};
+
+typedef struct
+{
+    char name[32], password[32], level[16];
+} Bot_t;
+
+static Bot_t Bots[MAX_BOTS];
+static int NBots = 0;
+
+static void readBots(void)
+{
+    char path[PATH_MAX], line[256];
+    FILE *f;
+
+    NBots = 0;
+    pathIn(path, sizeof(path), Home, "bots.txt");
+    if ((f = fopen(path, "r")) == NULL)
+    {
+        return;
+    }
+    while (fgets(line, sizeof(line), f) != NULL && NBots < MAX_BOTS)
+    {
+        Bot_t *b = &Bots[NBots];
+
+        if (line[0] == '#')
+        {
+            continue;
+        }
+        if (sscanf(line, "%31s %31s %15s", b->name, b->password, b->level)
+            == 3)
+        {
+            NBots++;
+        }
+    }
+    fclose(f);
+}
+
+static void writeBots(void)
+{
+    char path[PATH_MAX];
+    FILE *f;
+    int i;
+
+    pathIn(path, sizeof(path), Home, "bots.txt");
+    if ((f = fopen(path, "w")) == NULL)
+    {
+        die("can't write %s: %s", path, strerror(errno));
+    }
+    (void) chmod(path, 0600);
+    fprintf(f, "# the computer empires of this universe: name, password, "
+        "level (easy, normal\n# or hard). Edit the level to change how "
+        "one plays.\n");
+    for (i = 0; i < NBots; i++)
+    {
+        fprintf(f, "%s %s %s\n", Bots[i].name, Bots[i].password,
+            Bots[i].level);
+    }
+    fclose(f);
+}
+
+/* make sure the universe has `want` computer empires (want < 0: keep what
+   it has, three in a new universe), all at `level` if one is given */
+static void planBots(int want, const char *level, int fresh)
+{
+    const char *letters = "abcdefghjkmnpqrstuvwxyz23456789";
+    int i, j, changed = 0;
+
+    readBots();
+    if (want < 0)
+    {
+        want = fresh ? 3 : NBots;
+    }
+    if (want > MAX_BOTS)
+    {
+        want = MAX_BOTS;
+    }
+    while (NBots < want)
+    {
+        Bot_t *b = &Bots[NBots];
+
+        snprintf(b->name, sizeof(b->name), "%s", BotNames[NBots]);
+        for (j = 0; j < 12; j++)
+        {
+            b->password[j] = letters[rand() % (int) strlen(letters)];
+        }
+        b->password[12] = '\0';
+        snprintf(b->level, sizeof(b->level), "%s",
+            level != NULL ? level : "normal");
+        NBots++;
+        changed = 1;
+    }
+    /* fewer wanted: the others stay in the universe, but nobody plays them */
+    if (want < NBots)
+    {
+        NBots = want;
+        changed = 1;
+    }
+    if (level != NULL)
+    {
+        for (i = 0; i < NBots; i++)
+        {
+            if (strcmp(Bots[i].level, level) != 0)
+            {
+                snprintf(Bots[i].level, sizeof(Bots[i].level), "%s", level);
+                changed = 1;
+            }
+        }
+    }
+    if (changed)
+    {
+        writeBots();
+    }
+}
+
+static void startBots(const char *port)
+{
+    char impbot[PATH_MAX], dir[PATH_MAX], state[PATH_MAX], log[PATH_MAX],
+        pidfile[PATH_MAX];
+    FILE *pids;
+    int i;
+
+    if (NBots == 0)
+    {
+        return;
+    }
+    program(impbot, sizeof(impbot), "ImpBot");
+    pathIn(dir, sizeof(dir), Home, "bots");
+    mkdirs(dir, 0700);
+    pathIn(pidfile, sizeof(pidfile), Home, "bots.pid");
+    if ((pids = fopen(pidfile, "w")) == NULL)
+    {
+        die("can't write %s: %s", pidfile, strerror(errno));
+    }
+    for (i = 0; i < NBots; i++)
+    {
+        char *argv[16];
+        pid_t pid;
+        int n = 0;
+
+        snprintf(state, sizeof(state), "%s/%s.state", dir, Bots[i].name);
+        snprintf(log, sizeof(log), "%s/%s.log", dir, Bots[i].name);
+        argv[n++] = impbot;
+        argv[n++] = "-h";
+        argv[n++] = "127.0.0.1";
+        argv[n++] = "-p";
+        argv[n++] = (char *) port;
+        argv[n++] = "-n";
+        argv[n++] = Bots[i].name;
+        argv[n++] = "-w";
+        argv[n++] = Bots[i].password;
+        argv[n++] = "-l";
+        argv[n++] = Bots[i].level;
+        argv[n++] = "-s";
+        argv[n++] = state;
+        argv[n] = NULL;
+        pid = spawn(dir, log, argv);
+        fprintf(pids, "%ld\n", (long) pid);
+        /* the server takes one new player at a time */
+        usleep(1500000);
+    }
+    fclose(pids);
+    printf("%d computer empire%s in this universe: ", NBots,
+        NBots == 1 ? " is" : "s are");
+    for (i = 0; i < NBots; i++)
+    {
+        printf("%s%s (%s)", i == 0 ? "" : (i == NBots - 1 ? " and " : ", "),
+            Bots[i].name, Bots[i].level);
+    }
+    printf(".\n");
+}
+
+static void stopBots(void)
+{
+    char pidfile[PATH_MAX];
+    long p;
+    FILE *f;
+
+    pathIn(pidfile, sizeof(pidfile), Home, "bots.pid");
+    if ((f = fopen(pidfile, "r")) == NULL)
+    {
+        return;
+    }
+    while (fscanf(f, "%ld", &p) == 1)
+    {
+        if (p > 1)
+        {
+            (void) kill((pid_t) p, SIGTERM);
+        }
+    }
+    fclose(f);
+    (void) unlink(pidfile);
+    /* give them a moment to log off */
+    usleep(800000);
+}
+
+static int host(int lan, int wantBots, const char *botLevel)
 {
     char data[PATH_MAX], path[PATH_MAX], log[PATH_MAX], impserv[PATH_MAX],
         telimp[PATH_MAX], conimp[PATH_MAX], fifo[PATH_MAX];
     const char *user;
     struct passwd *pw;
     pid_t pid;
-    int status, i;
+    int status, i, fresh;
+    const char *port = getenv("IMPERIUM_TELNET_PORT");
     FILE *f;
 
+    if (port == NULL || atoi(port) <= 0)
+    {
+        port = DEFAULT_PORT;
+    }
     program(impserv, sizeof(impserv), "ImpServ");
     program(telimp, sizeof(telimp), "TelImp");
     program(conimp, sizeof(conimp), "ConImp");
@@ -609,10 +827,12 @@ static int host(int lan)
     writeAllow("ic.allow", user);
 
     pathIn(path, sizeof(path), data, "imp.world");
-    if (access(path, F_OK) != 0)
+    fresh = access(path, F_OK) != 0;
+    if (fresh)
     {
         createUniverse(data);
     }
+    planBots(wantBots, botLevel, fresh);
 
     pathIn(log, sizeof(log), Home, "server.log");
     if (serverPid() == 0)
@@ -635,22 +855,36 @@ static int host(int lan)
             die("the Imperium server did not start; see %s", log);
         }
     }
+    /* TelImp is how other players, and the computer empires, come in;
+       alone, it listens only on this computer, for the computer empires */
     pathIn(path, sizeof(path), Home, "telimp.pid");
-    if (lan && access(path, F_OK) != 0)
+    if ((lan || NBots > 0) && access(path, F_OK) != 0)
     {
         char *argv[] = { telimp, NULL };
-        const char *port = getenv("IMPERIUM_TELNET_PORT");
 
+        if (lan)
+        {
+            unsetenv("IMPERIUM_TELNET_BIND");
+        }
+        else
+        {
+            setenv("IMPERIUM_TELNET_BIND", "127.0.0.1", 1);
+        }
         pid = spawn(Home, log, argv);
         if ((f = fopen(path, "w")) != NULL)
         {
             fprintf(f, "%ld\n", (long) pid);
             fclose(f);
         }
-        printf("Players on your network can join with:  imperium join "
-            "<this computer>%s%s\n", port != NULL ? ":" : "",
-            port != NULL ? port : "");
+        usleep(500000);
+        if (lan)
+        {
+            printf("Players on your network can join with:  imperium join "
+                "<this computer>%s%s\n", strcmp(port, DEFAULT_PORT) != 0 ?
+                ":" : "", strcmp(port, DEFAULT_PORT) != 0 ? port : "");
+        }
     }
+    startBots(port);
     printf("New players join with the creation password add.me. The deity "
         "password is in\n%s/deity.txt.\n\n", Home);
     fflush(stdout);
@@ -699,6 +933,9 @@ static void usage(void)
          "  imperium host             a game of your own on this computer,\n"
          "                            open to players on your network\n"
          "  imperium host --alone     the same, without the network\n"
+         "    --bots N                with N computer empires (0 to 7; a new\n"
+         "                            universe starts with 3)\n"
+         "    --level LEVEL           how they play: easy, normal or hard\n"
          "  imperium join HOST[:PORT] a game someone hosts (port 3458)\n"
          "  imperium stop             stop the game this computer hosts");
 }
@@ -710,7 +947,8 @@ static int menu(void)
     puts("\n  I M P E R I U M\n"
          "  interstellar exploration, trade and war, since 1990\n\n"
          "  1  Play online at " ONLINE_HOST "\n"
-         "  2  Host a game on this computer (players on your network can join)\n"
+         "  2  Host a game on this computer, against computer empires\n"
+         "     (players on your network can join too)\n"
          "  3  Join a game on another computer\n"
          "  q  Quit\n");
     for (;;)
@@ -729,7 +967,7 @@ static int menu(void)
             case '1':
                 return play(ONLINE_HOST, DEFAULT_PORT);
             case '2':
-                return host(1);
+                return host(1, -1, NULL);
             case '3':
                 printf("Computer name or address (add :PORT if not 3458): ");
                 fflush(stdout);
@@ -766,7 +1004,40 @@ int main(int argc, char *argv[])
     }
     if (strcmp(argv[1], "host") == 0)
     {
-        return host(!(argc > 2 && strcmp(argv[2], "--alone") == 0));
+        int i, lan = 1, bots = -1;
+        const char *level = NULL;
+
+        for (i = 2; i < argc; i++)
+        {
+            if (strcmp(argv[i], "--alone") == 0)
+            {
+                lan = 0;
+            }
+            else if (strcmp(argv[i], "--bots") == 0 && i + 1 < argc)
+            {
+                bots = atoi(argv[++i]);
+                if (bots < 0 || bots > MAX_BOTS)
+                {
+                    die("--bots takes a number from 0 to %d", MAX_BOTS);
+                }
+            }
+            else if (strcmp(argv[i], "--level") == 0 && i + 1 < argc)
+            {
+                level = argv[++i];
+                if (strcmp(level, "easy") != 0 && strcmp(level, "normal")
+                    != 0 && strcmp(level, "hard") != 0)
+                {
+                    die("--level is easy, normal or hard");
+                }
+            }
+            else
+            {
+                usage();
+                return 2;
+            }
+        }
+        srand((unsigned) (time(NULL) ^ getpid()));
+        return host(lan, bots, level);
     }
     if (strcmp(argv[1], "join") == 0 && argc > 2)
     {

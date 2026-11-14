@@ -6,9 +6,10 @@
 # Each archive holds `imperium`, the launcher av starts (asciiverse/
 # imperium.c), and the game itself in imperium-game/: the server (ImpServ),
 # the universe creator (ImpCre), the console and network clients (ConImp,
-# TelImp), ImpShut and ImpCtrl, with the help and doc files. The launcher
-# plays the public game at empiredirectory.net, hosts a game in the
-# player's state folder, or joins one on the local network.
+# TelImp), the computer player (ImpBot), ImpShut and ImpCtrl, with the help
+# and doc files. The launcher plays the public game at empiredirectory.net,
+# hosts a game in the player's state folder with computer empires to play
+# against, or joins one on the local network.
 #
 # Linux builds run in Alpine and link statically against musl. macOS links
 # only the system's libraries. The game talks through named pipes and has
@@ -90,7 +91,7 @@ jobs:
           make LIB_DEBUG= CFLAGS="-O2" LIBS= </dev/null
           cc -O2 -Wall -o imperium asciiverse/imperium.c
           strip imperium Servers/ImpServ Clients/ConImp Clients/TelImp \
-            Servers/ImpShut Servers/ImpCtrl ImpCre/ImpCre
+            Clients/ImpBot Servers/ImpShut Servers/ImpCtrl ImpCre/ImpCre
           for f in imperium Servers/ImpServ Clients/ConImp; do
             otool -L "$f"
             if otool -L "$f" | grep -E '/usr/local/|/opt/homebrew/'; then
@@ -134,5 +135,5 @@ jobs:
         run: |
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Imperium $TAG" \
-                 --notes "Imperium 1.5 from github.com/fstltna/Imperium with the Asciiverse launcher: play online at empiredirectory.net, host a game of your own, or join one on your network."
+                 --notes "Imperium 1.5 from github.com/fstltna/Imperium with the Asciiverse launcher: play online at empiredirectory.net, host a game of your own against computer empires, or join one on your network."
           gh release upload "$TAG" dist/* -R "$GITHUB_REPOSITORY" --clobber

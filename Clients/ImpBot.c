@@ -67,6 +67,9 @@ typedef enum { L_EASY = 0, L_NORMAL = 1, L_HARD = 2 } Level_t;
 static const char *Host = "127.0.0.1";
 static const char *Port = "3458";
 static const char *Name = "Imperator";
+static const char *BaseName = "Imperator";
+static char NameBuf[64];        /* the name it plays under after a rebirth */
+static int Rebirths = 0;
 static const char *Password = NULL;
 static const char *CreatePass = "add.me";
 static const char *StateFile = NULL;
@@ -139,6 +142,7 @@ static char Out[OUTMAX];        /* what the last command printed */
 static size_t OutLen;
 static int Btu = 0;             /* player BTUs, from the prompt */
 static int Lost = 0;            /* the connection went away */
+static size_t Mark = 0;         /* where Out stood when we last typed */
 
 static long nowMs(void)
 {
@@ -155,6 +159,7 @@ static int sendLine(const char *line)
 
     snprintf(buf, sizeof(buf), "%s\r\n", line);
     n = strlen(buf);
+    Mark = OutLen;
     if (Log != NULL)
     {
         logf_("> %s", line);
@@ -172,7 +177,11 @@ static const char *tail(void)
 {
     const char *p = Out + OutLen;
 
-    while (p > Out && p[-1] != '\n')
+    if (Mark > OutLen)
+    {
+        Mark = 0;
+    }
+    while (p > Out + Mark && p[-1] != '\n')
     {
         p--;
     }
@@ -215,11 +224,11 @@ static int readUntilPrompt(int timeoutMs)
     char buf[8192];
     long deadline = nowMs() + timeoutMs, idleSince = nowMs();
     ssize_t n, i;
-    int r;
+    int r, got = 0;
 
     for (;;)
     {
-        if (OutLen > 0 && atMainPrompt())
+        if (got && OutLen > 0 && atMainPrompt())
         {
             return 1;
         }
@@ -260,9 +269,10 @@ static int readUntilPrompt(int timeoutMs)
             }
             Out[OutLen] = '\0';
             idleSince = nowMs();
+            got = 1;
             continue;
         }
-        if (OutLen > 0 && atSubPrompt() && nowMs() - idleSince > 250)
+        if (got && OutLen > 0 && atSubPrompt() && nowMs() - idleSince > 250)
         {
             return 2;
         }
@@ -305,6 +315,7 @@ static int cmd(Answer_t answer, void *ctx, const char *fmt, ...)
     va_end(ap);
     OutLen = 0;
     Out[0] = '\0';
+    Mark = 0;
     if (!sendLine(line))
     {
         return 0;
@@ -568,6 +579,10 @@ static void saveState(void)
     }
     fprintf(f, "ImpBot 1\nsize %d %d\nhome %d %d %d\nsessions %d\n", Rows,
         Cols, HomePlanet, HomeRow, HomeCol, Sessions);
+    if (Rebirths > 0)
+    {
+        fprintf(f, "rebirth %d %s\n", Rebirths, Name);
+    }
     for (i = 0; i < NKP; i++)
     {
         KPlanet *k = &KP[i];
@@ -638,6 +653,18 @@ static void loadState(void)
         {
             (void) sscanf(line + 5, "%d %d %d", &HomePlanet, &HomeRow,
                 &HomeCol);
+        }
+        else if (strncmp(line, "rebirth ", 8) == 0)
+        {
+            char *p = line + 8;
+
+            Rebirths = atoi(p);
+            p = strchr(p, ' ');
+            if (p != NULL && p[1] != '\0')
+            {
+                snprintf(NameBuf, sizeof(NameBuf), "%s", p + 1);
+                Name = NameBuf;
+            }
         }
         else if (strncmp(line, "sessions ", 9) == 0)
         {
@@ -1250,13 +1277,29 @@ static void readPlanets(void)
     }
 }
 
+/*
+ * Where the race's home planet is. Every look at the home planet brings it
+ * up to date and bills whoever looked for its soldiers' pay, so we only
+ * ever ask once, and not at all if a ship is sitting on it.
+ */
 static void readHome(void)
 {
     char *line, *save = NULL, *copy;
+    int i;
 
     if (HomePlanet < 0 || HomeRow >= 0)
     {
         return;
+    }
+    for (i = 0; i < NShips; i++)
+    {
+        if (Ships[i].planet == HomePlanet)
+        {
+            HomeRow = Ships[i].row;
+            HomeCol = Ships[i].col;
+            mapSet(HomeRow, HomeCol, 'H');
+            return;
+        }
     }
     if (!cmd(NULL, NULL, "census geo /1"))
     {
@@ -1723,6 +1766,7 @@ static int connectGame(void)
     }
     Lost = 0;
     LoginFailed = 0;
+    Mark = 0;
     OutLen = 0;
     Out[0] = '\0';
     for (;;)
@@ -1742,6 +1786,7 @@ static int connectGame(void)
             Sock = -1;
             return 0;
         }
+        logf_("< %s", tail());
         a = loginAnswer(tail(), NULL);
         if (LoginFailed)
         {
@@ -1794,6 +1839,11 @@ static int passable(int r, int c, int risky)
     if (m == '?')
     {
         return risky;
+    }
+    /* something too far off to make out: a planet or a star */
+    if (m == '0')
+    {
+        return 0;
     }
     return 1;
 }
@@ -1992,12 +2042,23 @@ static int moveShip(MyShip *s, const char *path)
         }
     }
     /* read where it really ended up */
-    readShips();
-    s = shipNum(s->num);
-    if (s == NULL)
     {
-        logf_("ship lost while moving");
-        return 0;
+        int num = s->num;
+        int destroyed = strstr(Out, " destroyed") != NULL ||
+            strstr(Out, "takes 100% damage") != NULL;
+
+        readShips();
+        s = shipNum(num);
+        if (s == NULL || destroyed)
+        {
+            /* only the last step went somewhere unknown: that was a star */
+            logf_("ship %d flew into a star at %d,%d", num, r, c);
+            if (onMap(r, c))
+            {
+                MAP(r, c) = '*';
+            }
+            return 0;
+        }
     }
     if (s->row != r || s->col != c)
     {
@@ -2239,4 +2300,902 @@ static int weaponsInstalledOn(int planet)
         }
     }
     return n;
+}
+
+/* big items lying on our planets: " Item | Planet | TF | T | Wgt | Eff" */
+typedef struct
+{
+    int item, planet;
+    char type;
+} PlBig;
+
+static PlBig PBig[1024];
+static int NPBig = 0;
+
+static void parsePlBig(char *line, void *ctx)
+{
+    char *f[8];
+    int n;
+    PlBig *b;
+
+    (void) ctx;
+    if (NPBig >= 1024 || strchr(line, '|') == NULL ||
+        strstr(line, "Item") != NULL)
+    {
+        return;
+    }
+    n = splitBars(line, f, 8);
+    b = &PBig[NPBig];
+    if (n < 6 || sscanf(f[0], "%d", &b->item) != 1 ||
+        sscanf(f[1], "%d", &b->planet) != 1)
+    {
+        return;
+    }
+    while (*f[3] == ' ')
+    {
+        f[3]++;
+    }
+    b->type = *f[3];
+    NPBig++;
+}
+
+static void readPlanetBig(void)
+{
+    NPBig = 0;
+    if (NMine > 0 && cmd(NULL, NULL, "census big ?class#1"))
+    {
+        eachLine(parsePlBig, NULL);
+    }
+}
+
+static int countPlBig(int planet, char type)
+{
+    int i, n = 0;
+
+    for (i = 0; i < NPBig; i++)
+    {
+        if (PBig[i].planet == planet && PBig[i].type == type)
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+/* take a big item of a type from a planet's list; -1 if none */
+static int takePlBig(int planet, char type)
+{
+    int i;
+
+    for (i = 0; i < NPBig; i++)
+    {
+        if (PBig[i].planet == planet && PBig[i].type == type)
+        {
+            int item = PBig[i].item;
+
+            PBig[i] = PBig[--NPBig];
+            return item;
+        }
+    }
+    return -1;
+}
+
+/* planet weapons are installed as soon as they are built, so every
+   photon tube on a planet is counted as installed (an install that fails
+   because the planet is full leaves it in store, which is also fine) */
+static int PlanetWeapons[MAXMINE];
+
+static const char *photonAnswer(const char *q, void *ctx)
+{
+    static char buf[16];
+    const char *p;
+
+    (void) ctx;
+    if (ciContains(q, "blaser/photon") || ciContains(q, "weapon"))
+    {
+        return "photon";
+    }
+    if ((p = strstr(q, "(max ")) != NULL)
+    {
+        snprintf(buf, sizeof(buf), "%d", atoi(p + 5));
+        return buf;
+    }
+    return NULL;
+}
+
+#define SHIP_PROD_COST(t) ((t) == 'a' ? 120 : (t) == 'b' ? 275 : 425)
+
+/* keep money back for military pay and upkeep */
+static long reserveMoney(void)
+{
+    return 600 + 150L * NMine;
+}
+
+static int affordProd(int units)
+{
+    return Money - (long) units * 9 > reserveMoney();
+}
+
+static void managePlanets(void)
+{
+    int i;
+
+    for (i = 0; i < NMine && Btu > ST.btuReserve + 6 && !Lost; i++)
+    {
+        MyPlanet *m = &Mine[i];
+
+        if (workUnset(m) && m->btu >= 2)
+        {
+            setDivvy(m);
+            continue;
+        }
+        if (m->eff < 60 || m->btu < 6)
+        {
+            continue;
+        }
+        /* defend: torpedo tubes on every planet, with missiles made there */
+        if (countPlBig(m->num, 'p') < ST.planetWeapons && m->prod[10] >= 114
+            && affordProd(114))
+        {
+            if (build(m->num, "weapon", "photon"))
+            {
+                int item = builtItem();
+
+                Money -= 114 * 9;
+                if (item >= 0)
+                {
+                    (void) cmd(NULL, NULL, "install %dp %d", m->num, item);
+                    PBig[NPBig].item = -1;
+                    if (NPBig < 1024)
+                    {
+                        PBig[NPBig].planet = m->num;
+                        PBig[NPBig].type = 'p';
+                        PBig[NPBig].item = item;
+                        NPBig++;
+                    }
+                }
+            }
+            continue;
+        }
+        /* a new ship once the planet has made the parts for one */
+        if (NShips < ST.maxShips && m->prod[12] >= 275 && m->prod[11] >= 190
+            && m->prod[15] >= 40 && m->eff >= 70 && m->civ >= 300 &&
+            affordProd(275 + 190 + 40 + 114))
+        {
+            static const char *parts[4] = { "engine", "computer", "lifesup",
+                "sensor" };
+            int p, ship;
+
+            if (!build(m->num, "ship", "b"))
+            {
+                continue;
+            }
+            ship = builtItem();
+            Money -= 275 * 9;
+            if (ship < 0)
+            {
+                continue;
+            }
+            logf_("new ship %d on planet %d", ship, m->num);
+            /* each build costs the planet 5 BTUs */
+            for (p = 0; p < 4 && !Lost; p++)
+            {
+                int item;
+
+                if (strcmp(parts[p], "engine") != 0 &&
+                    countPlBig(m->num, parts[p][0] == 'l' ? 'l' :
+                    parts[p][0]) > 0)
+                {
+                    item = takePlBig(m->num, parts[p][0]);
+                }
+                else if (build(m->num, parts[p], NULL))
+                {
+                    item = builtItem();
+                }
+                else
+                {
+                    item = -1;
+                }
+                if (item >= 0)
+                {
+                    (void) cmd(NULL, NULL, "load big %d %d", ship, item);
+                    (void) cmd(NULL, NULL, "install %d %d", ship, item);
+                }
+            }
+            /* a torpedo tube if the planet has one spare */
+            {
+                int item = (countPlBig(m->num, 'p') > ST.planetWeapons) ?
+                    takePlBig(m->num, 'p') : -1;
+
+                if (item < 0 && m->prod[10] >= 114 && affordProd(114) &&
+                    build(m->num, "weapon", "photon"))
+                {
+                    item = builtItem();
+                }
+                if (item >= 0)
+                {
+                    (void) cmd(NULL, NULL, "load big %d %d", ship, item);
+                    (void) cmd(NULL, NULL, "install %d %d", ship, item);
+                }
+            }
+            {
+                Cargo_t c = { 0, 4, 10, 4, 40, -1 };
+
+                (void) cmd(cargoAnswer, &c, "load small %d", ship);
+                (void) cmd(NULL, NULL, "refuel %d", ship);
+            }
+            continue;
+        }
+    }
+}
+
+/* ------------------------------------------------------------ ships */
+
+/* what each ship is doing, kept between sessions only in memory */
+static int nearestHomeOrColony(MyShip *s, int *gr, int *gc, char *path)
+{
+    int rc[2];
+
+    (void) path;
+    rc[0] = HomeRow;
+    rc[1] = HomeCol;
+    if (HomeRow < 0)
+    {
+        return -1;
+    }
+    *gr = HomeRow;
+    *gc = HomeCol;
+    return findPath(s->row, s->col, goalCell, rc, path, 30, gr, gc, 0);
+}
+
+static int maxSteps(const MyShip *s)
+{
+    int n = s->energy / 8;
+
+    return n > 30 ? 30 : n;
+}
+
+static void scanPlanetHere(MyShip *s)
+{
+    if (cmd(NULL, NULL, "scan planet 0 %d", s->num))
+    {
+        KPlanet *k = parsePlanetScan(s->row, s->col);
+
+        if (k != NULL)
+        {
+            logf_("planet %d at %d,%d: class %c owner %d gas %d water %d",
+                k->num, s->row, s->col, k->cls, k->owner, k->gas, k->water);
+        }
+    }
+}
+
+static void scanFromPlanet(int planet);
+
+/* land, put people down and take off again */
+static void settle(int num)
+{
+    MyShip *s = shipNum(num);
+    KPlanet *k;
+    Cargo_t c;
+
+    if (s == NULL)
+    {
+        return;
+    }
+    k = kpAt(s->row, s->col);
+    if (!cmd(NULL, NULL, "land %d", num) || strstr(Out, "on the surface") == NULL)
+    {
+        if (k != NULL)
+        {
+            k->tried++;
+        }
+        return;
+    }
+    /* keep a crew aboard */
+    c.civ = s->civ;
+    c.sci = s->sci > 2 ? s->sci - 2 : 0;
+    c.mil = s->mil > 2 ? s->mil - 2 : 0;
+    c.off = s->off > 2 ? s->off - 2 : (s->off > 1 ? 1 : 0);
+    c.mis = 0;
+    c.ftanks = 0;
+    (void) cmd(cargoAnswer, &c, "unload small %d", num);
+    if (strstr(Out, "You now own") != NULL)
+    {
+        logf_("settled planet at %d,%d", s->row, s->col);
+        if (k != NULL)
+        {
+            k->owner = 1;
+            scanFromPlanet(k->num);
+        }
+    }
+    else if (k != NULL)
+    {
+        k->tried++;
+    }
+    (void) cmd(NULL, NULL, "liftoff %d", num);
+}
+
+/* look around from a planet we own: planets see much further than the
+   sensors of a small ship, and tell stars from planets */
+static void scanFromPlanet(int planet)
+{
+    if (cmd(NULL, NULL, "scan sr %dp", planet))
+    {
+        parseSRScan();
+    }
+}
+
+/*
+ * A planet we can't live on can still be held for a moment: put one
+ * settler down, look around from it, and take the settler back (which
+ * gives the planet up again).
+ */
+static void probe(int num)
+{
+    MyShip *s = shipNum(num);
+    KPlanet *k;
+    Cargo_t c = { 1, 0, 0, 0, 0, 0 };
+
+    if (s == NULL || s->civ < 1)
+    {
+        return;
+    }
+    k = kpAt(s->row, s->col);
+    if (k == NULL || k->num < 0 || k->owner != 0)
+    {
+        return;
+    }
+    k->tried = 9;   /* once is enough */
+    if (!cmd(NULL, NULL, "land %d", num) || strstr(Out, "on the surface") == NULL)
+    {
+        return;
+    }
+    (void) cmd(cargoAnswer, &c, "unload small %d", num);
+    if (strstr(Out, "You now own") != NULL)
+    {
+        logf_("looking around from planet %d", k->num);
+        scanFromPlanet(k->num);
+        c.civ = -1;
+        (void) cmd(cargoAnswer, &c, "load small %d", num);
+    }
+    (void) cmd(NULL, NULL, "liftoff %d", num);
+}
+
+/* fill up with settlers at the race's home planet or one of ours */
+static void takeSettlers(int num)
+{
+    MyShip *s = shipNum(num);
+    Cargo_t c;
+    int room;
+
+    if (s == NULL)
+    {
+        return;
+    }
+    if (s->planet < 0 && !cmd(NULL, NULL, "land %d", num))
+    {
+        return;
+    }
+    room = s->avail - 50;
+    c.civ = room > 400 ? 400 : (room > 0 ? room : 0);
+    c.sci = 0;
+    c.mil = 20;
+    c.off = 4;
+    c.mis = 0;
+    c.ftanks = -1;
+    (void) cmd(cargoAnswer, &c, "load small %d", num);
+    s = shipNum(num);
+    (void) cmd(NULL, NULL, "refuel %d", num);
+    (void) cmd(NULL, NULL, "liftoff %d", num);
+}
+
+static int canBoard(int planet)
+{
+    int i;
+
+    if (planet == HomePlanet)
+    {
+        return NMine == 0 && Money > 1500;
+    }
+    for (i = 0; i < NMine; i++)
+    {
+        if (Mine[i].num == planet && Mine[i].civ > 400)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* goal: one of our planets with people to spare, or the home planet */
+static int goalBoarding(int r, int c, void *ctx)
+{
+    int i;
+
+    (void) ctx;
+    if (r == HomeRow && c == HomeCol && NMine == 0 && Money > 1500)
+    {
+        return 1;
+    }
+    for (i = 0; i < NMine; i++)
+    {
+        if (Mine[i].row == r && Mine[i].col == c && Mine[i].civ > 600)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* an enemy planet we know of */
+static int goalEnemy(int r, int c, void *ctx)
+{
+    KPlanet *k;
+
+    (void) ctx;
+    if (!onMap(r, c) || !isPlanetChar(MAP(r, c)))
+    {
+        return 0;
+    }
+    k = kpAt(r, c);
+    return k != NULL && k->owner == 2 && k->cls != 'H' && k->num >= 0;
+}
+
+static int war(void);
+
+/* attack the enemy planet the ship is orbiting */
+static void strike(int num)
+{
+    MyShip *s = shipNum(num);
+    KPlanet *k;
+
+    if (s == NULL)
+    {
+        return;
+    }
+    k = kpAt(s->row, s->col);
+    if (k == NULL || k->num < 0)
+    {
+        return;
+    }
+    if (!cmd(photonAnswer, NULL, "fire %dp %d", k->num, num))
+    {
+        return;
+    }
+    logf_("fired on planet %d (%s)", k->num, k->ownerName);
+    if (strstr(Out, "unowned") != NULL || strstr(Out, "wiped out") != NULL)
+    {
+        k->owner = 0;
+    }
+    /* look again: if nobody is left it can be settled */
+    scanPlanetHere(s);
+}
+
+static void actShip(int num)
+{
+    char path[128];
+    int gr, gc, n, guard;
+    MyShip *s;
+
+    for (guard = 0; guard < 12 && Btu > ST.btuReserve + 4 && !Lost; guard++)
+    {
+        KPlanet *here;
+
+        s = shipNum(num);
+        if (s == NULL || s->type == 'm')
+        {
+            return;
+        }
+        /* a new player's ship starts on the home planet: take settlers
+           aboard straight away, while the home planet's bill is small */
+        if (s->planet >= 0 && s->planet == HomePlanet && s->civ < 50 &&
+            NMine == 0 && guard == 0 && Money > 1500)
+        {
+            takeSettlers(num);
+            readShips();
+            s = shipNum(num);
+            if (s == NULL)
+            {
+                return;
+            }
+        }
+        if (s->eff < 60)
+        {
+            return;
+        }
+        if (s->planet >= 0)
+        {
+            /* on a planet: take on settlers if we can, then go */
+            if (s->civ < 50 && canBoard(s->planet) && NumColonies() <
+                ST.maxColonies)
+            {
+                takeSettlers(num);
+            }
+            else
+            {
+                (void) cmd(NULL, NULL, "liftoff %d", num);
+            }
+            readShips();
+            continue;
+        }
+        if (s->energy < 20)
+        {
+            if (s->ftanks > 0)
+            {
+                (void) cmd(NULL, NULL, "refuel %d", num);
+            }
+            return;
+        }
+        here = onMap(s->row, s->col) && isPlanetChar(MAP(s->row, s->col)) ?
+            kpAt(s->row, s->col) : NULL;
+        if (here != NULL && MAP(s->row, s->col) != 'H' && (!here->scanned ||
+            here->when + 3 < Sessions))
+        {
+            scanPlanetHere(s);
+            here = kpAt(s->row, s->col);
+        }
+        /* settle where we are */
+        if (here != NULL && colonisable(here) && s->civ >= 10)
+        {
+            settle(num);
+            readShips();
+            readPlanets();
+            continue;
+        }
+        /* a planet we can't use, unexplored around: look from it */
+        if (here != NULL && here->scanned && here->owner == 0 &&
+            here->tried < 9 && !colonisable(here) && s->civ >= 1 &&
+            (NMine == 0 || Sessions % 4 == 0))
+        {
+            probe(num);
+            readShips();
+            continue;
+        }
+        /* at war and over an enemy planet with torpedoes aboard */
+        if (here != NULL && here->owner == 2 && s->photons > 0 && s->mis >= 3
+            && war())
+        {
+            strike(num);
+            return;
+        }
+        /* where next? */
+        n = -1;
+        if (s->photons > 0 && s->mis >= 6 && war())
+        {
+            n = findPath(s->row, s->col, goalEnemy, NULL, path, maxSteps(s),
+                &gr, &gc, 0);
+        }
+        if (n < 0 && s->civ >= 10)
+        {
+            n = findPath(s->row, s->col, goalColony, NULL, path, maxSteps(s),
+                &gr, &gc, 0);
+        }
+        if (n < 0 && s->civ < 10 && NumColonies() < ST.maxColonies)
+        {
+            n = findPath(s->row, s->col, goalBoarding, NULL, path,
+                maxSteps(s), &gr, &gc, 0);
+            if (n == 0 || (gr == s->row && gc == s->col))
+            {
+                takeSettlers(num);
+                readShips();
+                continue;
+            }
+        }
+        if (n < 0)
+        {
+            n = findPath(s->row, s->col, goalUnscanned, NULL, path,
+                maxSteps(s), &gr, &gc, 0);
+        }
+        if (n < 0)
+        {
+            /* nothing known to do: look further out */
+            scanFrom(s);
+            n = findPath(s->row, s->col, goalFrontier, NULL, path,
+                maxSteps(s), &gr, &gc, ST.riskyMoves);
+            if (n < 0)
+            {
+                n = nearestHomeOrColony(s, &gr, &gc, path);
+                if (n <= 0)
+                {
+                    return;
+                }
+            }
+        }
+        if (path[0] == '\0')
+        {
+            /* arrived at a goal cell already */
+            if (gr == s->row && gc == s->col && s->civ < 10)
+            {
+                takeSettlers(num);
+                readShips();
+            }
+            return;
+        }
+        if (!moveShip(s, path))
+        {
+            return;
+        }
+        s = shipNum(num);
+        if (s == NULL)
+        {
+            return;
+        }
+        scanFrom(s);
+        /* landing on the home planet to load settlers */
+        if (s->row == HomeRow && s->col == HomeCol && s->civ < 10 &&
+            NumColonies() < ST.maxColonies)
+        {
+            takeSettlers(num);
+            readShips();
+        }
+    }
+}
+
+static void manageShips(void)
+{
+    int nums[MAXSHIPS], n = NShips, i;
+
+    for (i = 0; i < n; i++)
+    {
+        nums[i] = Ships[i].num;
+    }
+    for (i = 0; i < n && Btu > ST.btuReserve + 4 && !Lost; i++)
+    {
+        actShip(nums[i]);
+    }
+}
+
+/* ------------------------------------------------------------ war */
+
+/* rough strength: our armed ships and planets against what we know of
+   the nearest enemy planet */
+static int war(void)
+{
+    int i, armed = 0, enemyMil = 0, known = 0, ourMil = 0;
+
+    if (ST.attackRatio == 0)
+    {
+        /* the easy empire only strikes back at whoever hit it */
+        for (i = 0; i < 64; i++)
+        {
+            if (AttackedBy[i])
+            {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    for (i = 0; i < NShips; i++)
+    {
+        if (Ships[i].photons > 0 && Ships[i].mis >= 6)
+        {
+            armed++;
+        }
+    }
+    for (i = 0; i < NMine; i++)
+    {
+        ourMil += Mine[i].mil + Mine[i].off;
+    }
+    for (i = 0; i < NKP; i++)
+    {
+        if (KP[i].owner == 2 && KP[i].cls != 'H')
+        {
+            known++;
+            enemyMil += KP[i].mil;
+        }
+    }
+    if (known == 0 || armed == 0)
+    {
+        return 0;
+    }
+    /* settled enough of our own first */
+    if (NMine < 3 && Level != L_HARD)
+    {
+        return 0;
+    }
+    return ourMil * 100 >= (enemyMil / known + 10) * ST.attackRatio;
+}
+
+/* telegrams tell us who has been firing on us */
+static void readNews(void)
+{
+    char *p;
+
+    if (!cmd(NULL, NULL, "read"))
+    {
+        return;
+    }
+    /* answer any "delete these telegrams?" question with the default */
+    for (p = Out; (p = strstr(p, " fired on ")) != NULL; p++)
+    {
+        int i;
+
+        for (i = 0; i < NKP; i++)
+        {
+            size_t len = strlen(KP[i].ownerName);
+
+            if (len > 0 && KP[i].owner == 2 && p - Out >= (long) len &&
+                strncmp(p - len, KP[i].ownerName, len) == 0)
+            {
+                AttackedBy[i % 64] = 1;
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------ a session */
+
+static void playSession(void)
+{
+    Sessions++;
+    if (Map == NULL || Sessions == 1)
+    {
+        readInfo();
+    }
+    if (Map == NULL)
+    {
+        return;
+    }
+    readStatus();
+    if (MyNumber < 0 && cmd(NULL, NULL, "player"))
+    {
+        eachLine(findMyNumber, NULL);
+    }
+    readNews();
+    readShips();
+    readHome();
+    readPlanets();
+    readPlanetBig();
+    logf_("session %d: %d BTUs, $%ld, %d ships, %d planets", Sessions, Btu,
+        Money, NShips, NMine);
+    /*
+     * Nothing left: no ships and no planets. Like a person whose empire
+     * is gone, start again as a new player (remembering the map).
+     */
+    if (NShips == 0 && NMine == 0 && Sessions > 1)
+    {
+        static const char *Suffix[3] = { "II", "III", "IV" };
+
+        if (Rebirths < 3)
+        {
+            snprintf(NameBuf, sizeof(NameBuf), "%s %s", BaseName,
+                Suffix[Rebirths]);
+            Rebirths++;
+            Name = NameBuf;
+            HomePlanet = HomeRow = HomeCol = -1;
+            MyNumber = -1;
+            memset(AttackedBy, 0, sizeof(AttackedBy));
+            logf_("empire lost; starting again as %s", Name);
+        }
+        saveState();
+        return;
+    }
+    /* look around from a few of our planets now and then */
+    if (NMine > 0 && Sessions % 5 == 1)
+    {
+        int i;
+
+        for (i = 0; i < NMine && i < 4; i++)
+        {
+            scanFromPlanet(Mine[(i + Sessions / 5) % NMine].num);
+        }
+    }
+    managePlanets();
+    manageShips();
+    saveState();
+}
+
+/* how long to wait for the BTUs to come back */
+static int sleepSeconds(void)
+{
+    /* a player gains about 2.5 BTUs each ITU */
+    long itus = (96 - ST.btuReserve) * 2 / 5 + 1;
+    long secs = itus * SecPerItu * ST.sleepScale / 100;
+
+    if (secs < 5)
+    {
+        secs = 5;
+    }
+    if (secs > 6 * 3600)
+    {
+        secs = 6 * 3600;
+    }
+    return (int) secs;
+}
+
+static void usage(void)
+{
+    fprintf(stderr, "usage: ImpBot -w PASSWORD [-h HOST] [-p PORT] [-n NAME]"
+        " [-c CREATION-PASSWORD]\n              [-l easy|normal|hard] "
+        "[-r RACE] [-s STATEFILE] [-L LOGFILE] [-1]\n");
+    exit(2);
+}
+
+int main(int argc, char *argv[])
+{
+    int opt, failures = 0;
+
+    while ((opt = getopt(argc, argv, "h:p:n:w:c:l:r:s:L:1")) != -1)
+    {
+        switch (opt)
+        {
+            case 'h': Host = optarg; break;
+            case 'p': Port = optarg; break;
+            case 'n': Name = optarg; BaseName = optarg; break;
+            case 'w': Password = optarg; break;
+            case 'c': CreatePass = optarg; break;
+            case 'r': WantRace = atoi(optarg); break;
+            case 's': StateFile = optarg; break;
+            case 'L': LogFile = optarg; break;
+            case '1': OneSession = 1; break;
+            case 'l':
+                if (strcmp(optarg, "easy") == 0)
+                {
+                    Level = L_EASY;
+                }
+                else if (strcmp(optarg, "normal") == 0)
+                {
+                    Level = L_NORMAL;
+                }
+                else if (strcmp(optarg, "hard") == 0)
+                {
+                    Level = L_HARD;
+                }
+                else
+                {
+                    usage();
+                }
+                break;
+            default:
+                usage();
+        }
+    }
+    if (Password == NULL)
+    {
+        usage();
+    }
+    if (LogFile != NULL)
+    {
+        Log = fopen(LogFile, "a");
+    }
+    srandom((unsigned) (time(NULL) ^ getpid()));
+    signal(SIGINT, onSignal);
+    signal(SIGTERM, onSignal);
+    signal(SIGHUP, onSignal);
+    signal(SIGPIPE, SIG_IGN);
+    loadState();
+    while (!Stopping)
+    {
+        int wait;
+
+        if (connectGame())
+        {
+            failures = 0;
+            playSession();
+            disconnectGame();
+        }
+        else
+        {
+            failures++;
+            if (LoginFailed)
+            {
+                logf_("can't log in as %s; giving up", Name);
+                return 1;
+            }
+        }
+        if (OneSession)
+        {
+            break;
+        }
+        wait = failures > 0 ? (failures < 6 ? 5 * failures : 60) :
+            sleepSeconds();
+        logf_("sleeping %d seconds", wait);
+        while (wait-- > 0 && !Stopping)
+        {
+            sleep(1);
+        }
+    }
+    saveState();
+    logf_("stopped");
+    return 0;
 }

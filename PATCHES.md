@@ -39,6 +39,27 @@ the `asciiverse` branch carries the changes below.
     in a 133-byte request (`Include/Request.h`), so the launcher refuses
     a folder over 100 characters.
 
+- **Computer empires** (`Clients/ImpBot.c`, written to go upstream, not
+  offered yet). ImpBot is a computer player that connects to TelImp's TCP
+  port and plays by typing commands and reading the replies, exactly as
+  a person does: it knows only what its own scans show and is held to
+  the same BTUs, money and production. The server is unchanged. It is
+  self-contained C (the C library and BSD sockets, no game library or
+  secret codes), GPL version 1 or later like the rest of the game, built
+  by the Makefile and installed beside TelImp, so it could go upstream
+  as it is. Three levels: easy (slow, keeps cash, only strikes back),
+  normal and hard (spends every BTU, settles more, attacks sooner).
+- **TelImp can listen on one address** (written to go upstream, not
+  offered yet): `IMPERIUM_TELNET_BIND`, when set, names the IPv4 address
+  TelImp listens on (anything it can't read means 127.0.0.1). Unset,
+  it listens on every address as before.
+- **The launcher's `host` starts computer empires**: three in a new
+  universe, `--bots N` (0 to 7) and `--level easy|normal|hard` to
+  change them. Their names, passwords and levels are in `bots.txt` in
+  the game folder, their maps and logs in `bots/`. They run while the
+  game runs and stop with it. With `--alone`, TelImp runs for them on
+  127.0.0.1 only.
+
 ## Packaging
 
 - `.github/workflows/asciiverse-release.yml`: static Linux builds
