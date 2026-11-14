@@ -16,7 +16,8 @@ type_line add.me; sleep 1
 type_line stardust; sleep 0.6
 type_line stardust; sleep 2.5
 type_line 3; sleep 3
-for c in "player" "ship status" "census pop ?civ>0" "census geo ?civ>0" "census prod ?civ>0" "scan sr 0" "headlines"; do
+# the three computer empires made ships 0 to 2 before this player came
+for c in "player" "ship status" "census pop ?civ>0" "census geo ?civ>0" "census prod ?civ>0" "scan sr 3" "headlines"; do
   type_line "$c"; sleep 3
 done
 sleep 1.5
