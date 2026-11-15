@@ -52,13 +52,18 @@ when they have built up again. In a session it
   - and, when it judges itself strong enough, sends armed ships against
     the planets of its neighbours (fire).
 
+If its player is still marked as logged on after a connection broke, it
+logs on anyway, as a person would.
+
 The levels differ in how much they spend and how bold they are:
 
     easy    keeps BTUs and cash in reserve, builds little, and only strikes
             back at whoever has attacked it (it learns who from its
             telegrams)
     normal  spends most of its BTUs, settles a dozen or so planets, and
-            attacks once it has two armed ships and three planets
+            attacks once it has two armed ships and three planets (or one
+            armed ship and five planets); a crewed warship with no enemy
+            in sight goes looking at planets nobody has examined
     hard    spends everything, settles widely, arms more, and attacks
             with its first armed ship
 

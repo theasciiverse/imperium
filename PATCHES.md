@@ -51,25 +51,50 @@ the `asciiverse` branch carries the changes below.
   by the Makefile and installed beside TelImp, so it could go upstream
   as it is. Three levels: easy (slow, keeps cash, only strikes back),
   normal and hard (spends every BTU, settles more, attacks sooner).
-  What could still be better (from test games on local universes,
-  2026-11-14/15):
-  - A starting ship's single sensor array can't tell a star from a
-    planet next to it, and about four in ten of those are stars: many
-    computer empires lose their first ship this way (people do too).
-    They start again as "Name II" while there is room in the game.
-  - Fuel decides everything: only class D and M planets with enough air
-    and water make fuel tanks, and an empire that settles none of them
-    soon has ships it can't move. Those empires stay at one to three
-    planets; the ones that find fuel grow to fifteen or more planets and
-    ten ships in a game day or two.
-  - Officers are scarce (five per player) and a ship or planet needs one
-    to fire, so torpedo tubes on planets mostly can't fire back and
-    only a few warships can attack. Hard and normal empires do attack
-    colonies they find; most torpedoes miss.
-  - Money piles up far beyond what is spent; it could buy more ships,
-    research and technology.
-  - A colony is never given up or defended actively (moving soldiers
-    and officers to a threatened planet).
+  What changed in av.6 (from test games on local universes,
+  2026-11-15; the plan to 1.0 is `asciiverse/IMPBOT-ROADMAP.md`):
+  - **Fuel on every planet.** doc items says fuel tanks need more than
+    50% air and 25% water, but the game makes them on any planet people
+    can live on (`Library/update.c` has no such rule), so every colony
+    makes fuel tanks and ships refuel at any of them. Empires no longer
+    stall at one or two planets with a ship they can't move.
+  - **Officers.** Officers come only from officer school, which the game
+    runs only on a planet whose soldiers are more than 3% of the most
+    people it can hold, with officers at least 5% of them; soldiers are
+    trained only where officers are at least 1% of the civilians. The
+    first ship keeps its five officers until it can start a school on a
+    small planet, settled with few people, its soldiers and ore brought
+    along (people double with every update, so the chance comes only in
+    a new colony's first updates), and the school's soldiers are kept in
+    the band where it trains. When no school starts within a dozen
+    sessions, the officers go to the warships. Ships trade officers with
+    every planet they land on; planets with tubes get one once the
+    warships have theirs, and a planet under attack gets two.
+  - **Money.** Planets move between three shares of cash (about a third,
+    an eighth, a few percent) as money builds up and falls, with room
+    between the marks so they don't change back and forth (each change
+    costs efficiency); gold mining, which only piles up interest, stops
+    when money piles up. A rich empire runs more ships and tubes. A
+    planet has at most 18 BTUs and every build costs 5, so ship parts
+    are built into store over several sessions and the ship takes them
+    aboard when it is built.
+  - **Colonies.** A planet that has been fired on gets more tubes and
+    officers first; one under attack with almost nobody left is given up
+    (nothing more built there, its officers taken off). Normal attacks
+    with two armed ships and three planets, or with one once it holds
+    five.
+  - **Fixes.** Ship reports print thousands with K, which ImpBot read as
+    units (big ships took no settlers); a computer empire restarted on an
+    old map read the ITU as ten minutes and slept six hours; a player
+    left marked as logged on by a broken connection now logs on anyway,
+    as a person would; a ship that can't lift off waits instead of
+    trying again and again; ships prefer planets whose class is known to
+    ones that may be stars.
+  What could still be better: most first ships are still lost to stars
+  (a single sensor array can't tell a star from a planet), about half
+  the empires restart once or twice; an officer school rarely starts;
+  computer empires find each other's colonies slowly, so attacks are
+  few; defence is passive; money still outruns what there is to buy.
 - **TelImp can listen on one address** (written to go upstream, not
   offered yet): `IMPERIUM_TELNET_BIND`, when set, names the IPv4 address
   TelImp listens on (anything it can't read means 127.0.0.1). Unset,

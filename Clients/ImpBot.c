@@ -1781,7 +1781,10 @@ static const char *loginAnswer(const char *q, void *ctx)
     {
         return Name;
     }
-    if (ciContains(q, "wish to create") || ciContains(q, "(y/n)"))
+    /* "already marked as logged on": left so by a connection that broke
+       (only one ImpBot plays each player), so go on as a person would */
+    if (ciContains(q, "wish to create") || ciContains(q, "(y/n)") ||
+        ciContains(q, "log on anyway"))
     {
         return "y";
     }
@@ -3967,6 +3970,15 @@ static void actShip(int num)
                 readShips();
                 continue;
             }
+        }
+        /* a crewed warship with no enemy known goes looking at planets
+           nobody has examined yet, which is how colonies of other empires
+           are found, rather than carrying settlers */
+        if (n < 0 && armedShip(s) && ST.attackRatio > 0 && NMine >= 3 &&
+            !war())
+        {
+            n = findPath(s->row, s->col, goalUnscannedKnown, NULL, path,
+                maxSteps(s), &gr, &gc, 0);
         }
         /* officers: carry spare ones to planets that need them, and get
            one for a warship that has none */
