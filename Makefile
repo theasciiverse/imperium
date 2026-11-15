@@ -75,10 +75,10 @@ LIB_SRCS = $(addprefix Library/, messages.c util.c commands.c parse.c \
 LIB_OBJS = $(LIB_SRCS:.c=.o)
 IMPLIB = Library/libimpm.a
 
-PROGS = Clients/ConImp Clients/TelImp Servers/ImpServ Servers/ImpShut \
-	Servers/ImpCtrl ImpCre/ImpCre
+PROGS = Clients/ConImp Clients/TelImp Clients/ImpBot Servers/ImpServ \
+	Servers/ImpShut Servers/ImpCtrl ImpCre/ImpCre
 
-ALL_OBJS = $(LIB_OBJS) Clients/ConImp.o Clients/TelImp.o \
+ALL_OBJS = $(LIB_OBJS) Clients/ConImp.o Clients/TelImp.o Clients/ImpBot.o \
 	Servers/ServerMain.o Servers/FileIO.o Servers/ImpShut.o \
 	Servers/ImpCtrl.o ImpCre/ImpCre.o
 
@@ -123,6 +123,11 @@ Clients/ConImp: Clients/ConImp.o $(IMPLIB)
 
 Clients/TelImp: Clients/TelImp.o $(IMPLIB)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+# The computer player is a plain network client: it needs neither the game
+# library nor the secret codes, only TelImp's TCP port
+Clients/ImpBot: Clients/ImpBot.o
+	$(CC) $(LDFLAGS) -o $@ $^
 
 Servers/ImpServ: Servers/ServerMain.o Servers/FileIO.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
@@ -185,7 +190,7 @@ SUBST = sed -e 's|@IMP_DEST@|$(IMP_DEST)|g' -e 's|@IMP_OWN@|$(IMP_OWN)|g' \
 install: all install-check
 	$(INSTALL) -d $(OWN) -m 755 $(D) $(D)/clients $(D)/servers \
 		$(D)/impcre $(D)/help $(D)/doc $(D)/data
-	$(INSTALL) $(OWN) -m 751 Clients/ConImp Clients/TelImp \
+	$(INSTALL) $(OWN) -m 751 Clients/ConImp Clients/TelImp Clients/ImpBot \
 		Clients/starttelimpscreen $(D)/clients
 	$(INSTALL) $(OWN) -m 711 Servers/ImpCtrl Servers/ImpShut $(D)/servers
 	$(INSTALL) $(OWN) -m 4700 Servers/ImpServ $(D)/servers

@@ -1,0 +1,55 @@
+                     Imperium - ImpBot, the computer player
+
+ImpBot is a computer player. It connects to TelImp's TCP port and plays by
+typing commands and reading what the game prints, exactly as a person at a
+terminal does. It is not part of the server and changes nothing in it: it
+sees only what its own scans show it, and it is held to the same BTUs,
+money, production and time limits as every other player.
+
+    ImpBot -w PASSWORD [-h HOST] [-p PORT] [-n NAME] [-c CREATION-PASSWORD]
+           [-l easy|normal|hard] [-r RACE] [-s STATEFILE] [-L LOGFILE] [-1]
+
+    -h HOST      the game's host (default 127.0.0.1)
+    -p PORT      TelImp's port (default 3458)
+    -n NAME      the player's name; it is created the first time
+    -w PASSWORD  the player's password (at most 9 characters)
+    -c PASSWORD  the game's creation password (default add.me)
+    -l LEVEL     how it plays: easy, normal (the default) or hard
+    -r RACE      the race to join; otherwise the one with fewest players
+    -s FILE      where it keeps what it has learnt (its map, the planets it
+                 has seen) between sessions
+    -L FILE      a log of everything it typed and read
+    -1           play one session and stop
+
+It plays in sessions: it logs in, spends its BTUs, logs off, and comes back
+when they have built up again. In a session it
+
+  - reads its ships and planets (ships, census), and sets each new planet
+    to work (divvy), keeping a good share for cash so it never runs out of
+    money;
+  - explores with its ships, one scan at a time, and remembers the map;
+  - scans planets it reaches, settles those with air, and briefly holds
+    those without to scan the sectors around from them;
+  - builds torpedo tubes on its planets and installs them, so its planets
+    fire back when attacked;
+  - builds new ships and fits them with an engine, computer, life support,
+    sensors and, when it can, a torpedo tube;
+  - keeps its ships fuelled from planets that make fuel tanks;
+  - and, when it judges itself strong enough, sends armed ships against
+    the planets of its neighbours (fire).
+
+The levels differ in how much they spend and how bold they are:
+
+    easy    keeps BTUs and cash in reserve, builds little, and only strikes
+            back at whoever has attacked it (it learns who from its
+            telegrams)
+    normal  spends most of its BTUs, settles a dozen or so planets, and
+            attacks once it has two armed ships and three planets
+    hard    spends everything, settles widely, arms more, and attacks
+            with its first armed ship
+
+A computer empire left with no ships and no planets starts again as a new
+player (its name with II, III or IV after it), as a person might.
+
+Run it with a deity's permission, like any other player: it takes one of
+the game's player places.
