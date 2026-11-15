@@ -25,16 +25,30 @@ It plays in sessions: it logs in, spends its BTUs, logs off, and comes back
 when they have built up again. In a session it
 
   - reads its ships and planets (ships, census), and sets each new planet
-    to work (divvy), keeping a good share for cash so it never runs out of
-    money;
+    to work (divvy): a young empire keeps a good share for cash so it
+    never runs out of money, and as its money builds up it turns its
+    planets to ore, technology and the parts of warships, and back again
+    if money runs short;
   - explores with its ships, one scan at a time, and remembers the map;
   - scans planets it reaches, settles those with air, and briefly holds
     those without to scan the sectors around from them;
   - builds torpedo tubes on its planets and installs them, so its planets
-    fire back when attacked;
+    fire back when attacked, with more on a planet that has been fired on
+    and more again once it has money to spare;
   - builds new ships and fits them with an engine, computer, life support,
-    sensors and, when it can, a torpedo tube;
-  - keeps its ships fuelled from planets that make fuel tanks;
+    sensors and, when it can, a torpedo tube; it runs more ships as its
+    money and planets grow;
+  - makes fuel tanks on every planet it settles and keeps its ships
+    fuelled from them;
+  - starts an officer school: its first ship keeps its five officers
+    until it settles a small planet, leaves them there with its soldiers
+    and some ore, and the planet trains soldiers and then officers (the
+    game trains officers only where soldiers are more than 3% of the
+    most people a planet can hold, with officers at least 5% of them);
+    the officers it trains are carried to its warships and to planets
+    with torpedo tubes, which need one to fire;
+  - gives up a colony that is being fired on and has almost nobody left,
+    taking its officers away rather than sending it more;
   - and, when it judges itself strong enough, sends armed ships against
     the planets of its neighbours (fire).
 
