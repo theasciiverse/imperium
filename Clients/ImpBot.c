@@ -399,8 +399,9 @@ static long reportNum(const char *s)
     {
         v *= 100;
     }
-    else if (*end == 'k')
+    else if (*end == 'k' || *end == 'K')
     {
+        /* census reports use k, ship reports K, both for thousands */
         v *= 1000;
     }
     return v;
@@ -2349,7 +2350,8 @@ static void planDivvy(const MyPlanet *m, int work[16], int tier)
            into ore, technology and the parts of warships */
         work[2] = 9;
         work[3] = 3;
-        work[6] += 4;
+        work[6] += 4 + work[7];
+        work[7] = 0;            /* gold only piles up more money */
         work[10] = 12;
         work[11] = 9;
         work[12] = 14;
@@ -3169,7 +3171,8 @@ static int maxShips(void)
 
     if (Level != L_EASY && Money > RICH)
     {
-        n += NMine / 3 + (Money > VERY_RICH ? 3 : 1);
+        /* money that would only pile up goes into more ships */
+        n += NMine / 3 + (Money > VERY_RICH ? 3 : 1) + (int) (Money / 100000);
     }
     return n < MAXSHIPS - 4 ? n : MAXSHIPS - 4;
 }
@@ -3210,6 +3213,7 @@ static void managePlanets(void)
         if (Money > RICH && Level != L_EASY)
         {
             tubes += Money > VERY_RICH ? 3 : 1;
+            tubes += Money > 5 * VERY_RICH ? 3 : 0;
         }
         /*
          * A planet has 18 BTUs at most and every build costs it 5, so a
@@ -3304,6 +3308,8 @@ static int maxSteps(const MyShip *s)
     return n > 30 ? 30 : n;
 }
 
+static void swapOfficers(MyShip *s);
+
 /* land on a fuel planet, take tanks aboard and burn some */
 static void takeFuel(int num)
 {
@@ -3316,6 +3322,9 @@ static void takeFuel(int num)
     }
     (void) cmd(cargoAnswer, &c, "load small %d", num);
     (void) cmd(NULL, NULL, "refuel %d", num);
+    /* while down, trade officers with the planet */
+    readShips();
+    swapOfficers(shipNum(num));
     (void) cmd(NULL, NULL, "liftoff %d", num);
 }
 
@@ -3371,10 +3380,15 @@ static void settle(int num)
     c.off = (s->photons == 0 && Academy < 0 && !SchoolFailed && s->off >= 5
         && s->ore >= 150 && k != NULL && schoolable(k->size, k->water)) ?
         s->off : 0;
+    if (s->photons == 0 && SchoolFailed)
+    {
+        /* no school: leave the officers where warships can take them */
+        c.off = s->off;
+    }
     c.mis = 0;
     c.ftanks = 0;
     c.ore = 0;
-    if (c.off > 0)
+    if (c.off > 0 && !SchoolFailed)
     {
         /* a school starts with few people, all the soldiers, and ore to
            train them with (a new planet has none of its own) */
@@ -3392,7 +3406,7 @@ static void settle(int num)
 
             k->owner = 1;
             scanFromPlanet(k->num);
-            if (c.off >= 5)
+            if (c.off >= 5 && !SchoolFailed)
             {
                 Academy = k->num;
                 SchoolUpdated = Sessions;
@@ -3543,8 +3557,10 @@ static void takeSettlers(int num)
     /* ore for an officer school, while the ship carries its officers */
     c.ore = (s->off >= 5 && Academy < 0 && !SchoolFailed) ? 300 : 0;
     (void) cmd(cargoAnswer, &c, "load small %d", num);
-    s = shipNum(num);
     (void) cmd(NULL, NULL, "refuel %d", num);
+    /* while down, trade officers with the planet */
+    readShips();
+    swapOfficers(shipNum(num));
     (void) cmd(NULL, NULL, "liftoff %d", num);
 }
 
@@ -3806,6 +3822,8 @@ static void actShip(int num)
 
             (void) cmd(cargoAnswer, &c, "load small %d", num);
             (void) cmd(NULL, NULL, "refuel %d", num);
+            readShips();
+            swapOfficers(shipNum(num));
             (void) cmd(NULL, NULL, "liftoff %d", num);
             readShips();
             continue;
@@ -3829,6 +3847,11 @@ static void actShip(int num)
             else
             {
                 (void) cmd(NULL, NULL, "liftoff %d", num);
+                if (strstr(Out, "***") != NULL)
+                {
+                    /* not efficient enough yet, or no energy: wait */
+                    return;
+                }
             }
             readShips();
             continue;
@@ -4273,10 +4296,15 @@ static int allStranded(void)
 
 static void playSession(void)
 {
+    static int infoRead = 0;
+
     Sessions++;
-    if (Map == NULL || Sessions == 1)
+    /* the length of an ITU comes from info: read it in this run's first
+       session, also when the map came from the state file */
+    if (Map == NULL || !infoRead)
     {
         readInfo();
+        infoRead = 1;
     }
     if (Map == NULL)
     {
