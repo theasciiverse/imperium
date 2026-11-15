@@ -2465,7 +2465,8 @@ static const char *photonAnswer(const char *q, void *ctx)
     const char *p;
 
     (void) ctx;
-    if (ciContains(q, "blaser/photon") || ciContains(q, "weapon"))
+    /* "Fire what (blasers/photon)", "What type of weapon (blaser/photon)" */
+    if (ciContains(q, "photon)") || ciContains(q, "type of weapon"))
     {
         return "photon";
     }
@@ -2947,6 +2948,11 @@ static void strike(int num)
     }
     if (!cmd(photonAnswer, NULL, "fire %dp %d", k->num, num))
     {
+        return;
+    }
+    if (strstr(Out, "how many") == NULL)
+    {
+        logf_("could not fire on planet %d", k->num);
         return;
     }
     logf_("fired on planet %d (%s)", k->num, k->ownerName);
