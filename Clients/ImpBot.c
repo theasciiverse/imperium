@@ -441,7 +441,23 @@ static int HomeRow = -1, HomeCol = -1;
 static long Money = 0;
 static int MyNumber = -1;
 static int Sessions = 0;
-static int AttackedBy[64];          /* who has fired on us lately */
+#define MAXFOES 8
+static char Foes[MAXFOES][64];      /* players who have fired on us */
+static int NFoes = 0;
+
+static int isFoe(const char *name)
+{
+    int i;
+
+    for (i = 0; i < NFoes; i++)
+    {
+        if (strcmp(Foes[i], name) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 /*
  * The map holds one character per subsector:
@@ -570,6 +586,10 @@ static void saveState(void)
     {
         fprintf(f, "rebirth %d %s\n", Rebirths, Name);
     }
+    for (i = 0; i < NFoes; i++)
+    {
+        fprintf(f, "foe %s\n", Foes[i]);
+    }
     for (i = 0; i < NKP; i++)
     {
         KPlanet *k = &KP[i];
@@ -640,6 +660,10 @@ static void loadState(void)
         {
             (void) sscanf(line + 5, "%d %d %d", &HomePlanet, &HomeRow,
                 &HomeCol);
+        }
+        else if (strncmp(line, "foe ", 4) == 0 && NFoes < MAXFOES)
+        {
+            snprintf(Foes[NFoes++], sizeof(Foes[0]), "%s", line + 4);
         }
         else if (strncmp(line, "rebirth ", 8) == 0)
         {
@@ -2909,7 +2933,8 @@ static int goalEnemy(int r, int c, void *ctx)
         return 0;
     }
     k = kpAt(r, c);
-    return k != NULL && k->owner == 2 && k->cls != 'H' && k->num >= 0;
+    return k != NULL && k->owner == 2 && k->cls != 'H' && k->num >= 0 &&
+        (ST.attackRatio > 0 || isFoe(k->ownerName));
 }
 
 static int war(void);
@@ -3368,11 +3393,17 @@ static int war(void)
     }
     if (ST.attackRatio == 0)
     {
-        for (i = 0; i < 64; i++)
+        /* only against whoever hit us, and only planets of theirs we know */
+        if (armed == 0)
         {
-            if (AttackedBy[i])
+            return 0;
+        }
+        for (i = 0; i < NKP; i++)
+        {
+            if (KP[i].owner == 2 && KP[i].cls != 'H' && KP[i].num >= 0 &&
+                isFoe(KP[i].ownerName))
             {
-                return armed > 0 && known > 0;
+                return 1;
             }
         }
         return 0;
@@ -3392,26 +3423,45 @@ static int war(void)
 /* telegrams tell us who has been firing on us */
 static void readNews(void)
 {
-    char *p;
+    const char *p;
 
     if (!cmd(NULL, NULL, "read"))
     {
         return;
     }
-    /* answer any "delete these telegrams?" question with the default */
-    for (p = Out; (p = strstr(p, " fired on ")) != NULL; p++)
+    /*
+     * "Your class D #365 was fired upon by ship #13!" comes with the
+     * attacker's own scan of us: "Bot3hard II class B #13 at 78,78 was
+     * able to scan your planet #365". Put the two together to learn who.
+     */
+    for (p = Out; (p = strstr(p, "fired upon by ship #")) != NULL; p++)
     {
-        int i;
+        int ship = atoi(p + strlen("fired upon by ship #"));
+        char key[32];
+        const char *q = Out;
 
-        for (i = 0; i < NKP; i++)
+        snprintf(key, sizeof(key), " #%d at ", ship);
+        while ((q = strstr(q, key)) != NULL)
         {
-            size_t len = strlen(KP[i].ownerName);
+            const char *line = q, *cls;
 
-            if (len > 0 && KP[i].owner == 2 && p - Out >= (long) len &&
-                strncmp(p - len, KP[i].ownerName, len) == 0)
+            while (line > Out && line[-1] != '\n')
             {
-                AttackedBy[i % 64] = 1;
+                line--;
             }
+            cls = strstr(line, " class ");
+            if (cls != NULL && cls < q && cls - line < 63 && NFoes < MAXFOES)
+            {
+                char who[64];
+
+                snprintf(who, sizeof(who), "%.*s", (int) (cls - line), line);
+                if (!isFoe(who) && strcmp(who, Name) != 0)
+                {
+                    snprintf(Foes[NFoes++], sizeof(Foes[0]), "%s", who);
+                    logf_("%s has attacked us", who);
+                }
+            }
+            q++;
         }
     }
 }
@@ -3483,7 +3533,7 @@ static void playSession(void)
             HomePlanet = HomeRow = HomeCol = -1;
             MyNumber = -1;
             NShips = 0;
-            memset(AttackedBy, 0, sizeof(AttackedBy));
+            NFoes = 0;
             logf_("empire lost; starting again as %s", Name);
         }
         saveState();
