@@ -2848,8 +2848,9 @@ static void takeSettlers(int num)
         }
     }
     c.sci = 0;
-    c.mil = 20;
-    c.off = 4;
+    /* settlers only: soldiers and officers stay where they are */
+    c.mil = 0;
+    c.off = 0;
     c.mis = s->photons > 0 ? 40 : 0;
     c.ftanks = -1;
     (void) cmd(cargoAnswer, &c, "load small %d", num);
