@@ -40,13 +40,13 @@ when they have built up again. In a session it
     money and planets grow;
   - makes fuel tanks on every planet it settles and keeps its ships
     fuelled from them;
-  - starts an officer school: its first ship keeps its five officers
-    until it settles a small planet, leaves them there with its soldiers
-    and some ore, and the planet trains soldiers and then officers (the
-    game trains officers only where soldiers are more than 3% of the
-    most people a planet can hold, with officers at least 5% of them);
-    the officers it trains are carried to its warships and to planets
-    with torpedo tubes, which need one to fire;
+  - leaves its five officers on its first colony, and if that is a
+    small planet starts an officer school there: the planet trains
+    soldiers while it still has few people, then officers (the game
+    trains officers only where soldiers are more than 3% of the most
+    people a planet can hold, with officers at least 5% of them);
+    officers are carried to its warships first and then to planets with
+    torpedo tubes, which need one to fire;
   - gives up a colony that is being fired on and has almost nobody left,
     taking its officers away rather than sending it more;
   - and, when it judges itself strong enough, sends armed ships against

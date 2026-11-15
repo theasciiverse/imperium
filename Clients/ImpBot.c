@@ -3381,11 +3381,18 @@ static void settle(int num)
      * straight away.
      */
     c.off = (s->photons == 0 && Academy < 0 && !SchoolFailed && s->off >= 5
-        && s->ore >= 150 && k != NULL && schoolable(k->size, k->water)) ?
-        s->off : 0;
-    if (s->photons == 0 && SchoolFailed)
+        && k != NULL && schoolable(k->size, k->water)) ? s->off : 0;
+    if (s->photons == 0 && (SchoolFailed || NMine == 0))
     {
-        /* no school: leave the officers where warships can take them */
+        /* a ship in space can be lost to a star or run dry with them
+           aboard: the first colony keeps the officers safe, and without
+           a school warships take them from there */
+        if (c.off == 0 && NMine == 0 && !SchoolFailed)
+        {
+            logf_("no small planet for an officer school; officers go to "
+                "the warships");
+            SchoolFailed = 1;
+        }
         c.off = s->off;
     }
     c.mis = 0;

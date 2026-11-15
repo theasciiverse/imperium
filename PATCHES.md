@@ -61,15 +61,17 @@ the `asciiverse` branch carries the changes below.
   - **Officers.** Officers come only from officer school, which the game
     runs only on a planet whose soldiers are more than 3% of the most
     people it can hold, with officers at least 5% of them; soldiers are
-    trained only where officers are at least 1% of the civilians. The
-    first ship keeps its five officers until it can start a school on a
-    small planet, settled with few people, its soldiers and ore brought
-    along (people double with every update, so the chance comes only in
-    a new colony's first updates), and the school's soldiers are kept in
-    the band where it trains. When no school starts within a dozen
-    sessions, the officers go to the warships. Ships trade officers with
-    every planet they land on; planets with tubes get one once the
-    warships have theirs, and a planet under attack gets two.
+    trained only where officers are at least 1% of the civilians.
+    People double with every update, so the chance comes only in a new
+    colony's first updates: the first ship leaves its five officers and
+    soldiers on its first colony, and if that is a small planet (size 0
+    or 1) settled with few people it becomes a school, brought up to date
+    once a session, with its soldiers kept in the band where it trains.
+    Otherwise, or when the school does not start, the officers go to the
+    warships (in early trials they were kept aboard the first ship for a
+    school and were lost with it to stars and empty tanks). Ships trade
+    officers with every planet they land on; planets with tubes get one
+    once the warships have theirs, and a planet under attack gets two.
   - **Money.** Planets move between three shares of cash (about a third,
     an eighth, a few percent) as money builds up and falls, with room
     between the marks so they don't change back and forth (each change
