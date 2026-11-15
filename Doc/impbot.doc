@@ -41,11 +41,12 @@ when they have built up again. In a session it
 The levels differ in how much they spend and how bold they are:
 
     easy    keeps BTUs and cash in reserve, builds little, and only strikes
-            back at whoever has attacked it
+            back at whoever has attacked it (it learns who from its
+            telegrams)
     normal  spends most of its BTUs, settles a dozen or so planets, and
-            attacks when clearly the stronger
+            attacks once it has two armed ships and three planets
     hard    spends everything, settles widely, arms more, and attacks
-            sooner
+            with its first armed ship
 
 A computer empire left with no ships and no planets starts again as a new
 player (its name with II, III or IV after it), as a person might.
