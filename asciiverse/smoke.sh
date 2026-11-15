@@ -5,7 +5,8 @@
 # the computer empires stop when the host leaves.
 set -eu
 d=$(cd "$1" && pwd)
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/impsmoke.XXXXXX")
+# a short base: macOS sets TMPDIR to a folder too long for the game folder
+tmp=$(mktemp -d "${IMPSMOKE_TMP:-/tmp}/impsmoke.XXXXXX")
 export XDG_STATE_HOME="$tmp/state" IMPERIUM_TELNET_PORT=13458
 export HOME="$tmp"
 

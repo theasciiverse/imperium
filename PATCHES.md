@@ -100,6 +100,9 @@ the `asciiverse` branch carries the changes below.
   it on each system: the state folder on Linux, Application Support on
   macOS (it checked only the Linux path, so macOS failed its smoke test
   while playing correctly).
+- `asciiverse/smoke.sh` makes its scratch folder under `IMPSMOKE_TMP`
+  (default /tmp), not `TMPDIR`: macOS's TMPDIR is too long a path for a
+  game folder.
 - `asciiverse/imperium.cast`: the catalog preview, a first session as a
   new player in a fresh private universe, typed by `asciiverse/drive.sh`.
   Never recorded against the public game.
